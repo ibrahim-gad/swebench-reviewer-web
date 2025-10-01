@@ -1,4 +1,12 @@
 pub mod app;
+#[cfg(feature = "ssr")]
+pub mod api;
+#[cfg(feature = "ssr")]
+pub mod auth;
+#[cfg(feature = "ssr")]
+pub mod drive;
+#[cfg(feature = "ssr")]
+pub mod session;
 
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
