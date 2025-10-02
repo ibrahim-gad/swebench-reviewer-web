@@ -16,7 +16,7 @@ leptos_meta = { version = "0.8.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "fs"], optional = true }
 wasm-bindgen = { version = "=0.2.103", optional = true }
 wasm-bindgen-futures = { version = "0.4.42", optional = true }
-web-sys = { version = "0.3.70", features = ["Window", "Location", "console"], optional = true }
+web-sys = { version = "0.3.70", features = ["Window", "Location", "console", "Storage"], optional = true }
 reqwest = { version = "0.12.23", features = ["json"], optional = true }
 gloo-net = { version = "0.6.0", optional = true }
 serde_json = "1.0.145"

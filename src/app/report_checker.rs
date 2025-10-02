@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::components::language_selector::{ProgrammingLanguage, LanguageSelector};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FileInfo {
@@ -110,6 +111,7 @@ enum StageStatus {
 #[component]
 pub fn ReportCheckerPage() -> impl IntoView {
     let deliverable_link = RwSignal::new(String::new());
+    let selected_language = RwSignal::new(ProgrammingLanguage::default());
     let is_processing = RwSignal::new(false);
     let current_stage = RwSignal::new(None::<ProcessingStage>);
     let stages = RwSignal::new(HashMap::from([
@@ -350,7 +352,10 @@ pub fn ReportCheckerPage() -> impl IntoView {
                 #[cfg(feature = "hydrate")]
                 {
                     let resp = gloo_net::http::Request::post("/api/validate")
-                        .json(&serde_json::json!({ "folder_link": link }))
+                        .json(&serde_json::json!({ 
+                            "folder_link": link,
+                            "programming_language": selected_language.get().as_str()
+                        }))
                         .unwrap()
                         .send()
                         .await;
@@ -440,7 +445,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
                                     .collect(),
                             };
 
-                            result.set(Some(processing_result.clone()));
+                            result.set(Some(processing_result));
                             current_stage.set(None);
                             
                             // After successful download, load additional data
@@ -467,6 +472,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
 
     let reset_state = move || {
         deliverable_link.set(String::new());
+        selected_language.set(ProgrammingLanguage::default());
         is_processing.set(false);
         current_stage.set(None);
         stages.set(HashMap::from([
@@ -508,7 +514,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
                 when=move || result.get().is_some() && (!fail_to_pass_tests.get().is_empty() || !pass_to_pass_tests.get().is_empty())
                 fallback=move || view! {
                     <div class="w-full flex flex-col h-full items-center justify-center">
-            <div class="w-full max-w-2xl">
+            <div class="w-full">
                 <div class="p-8">
 
                     <div class="text-center">
@@ -516,15 +522,23 @@ pub fn ReportCheckerPage() -> impl IntoView {
                             Deliverable Checker
                         </h2>
 
-                        <div class="mb-8">
-                            <input
-                                type="text"
-                                prop:value=move || deliverable_link.get()
-                                on:input=move |ev| deliverable_link.set(event_target_value(&ev))
-                                placeholder="Deliverable Link"
-                                class="w-full px-6 py-4 text-lg border-2 border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
-                                disabled=move || is_processing.get()
-                            />
+                        <div class="mb-8 space-y-6 flex flex-col items-center">
+                            <div>
+                                <LanguageSelector 
+                                    selected_language=selected_language
+                                    disabled=is_processing
+                                />
+                            </div>
+                            <div class="w-full max-w-2xl">
+                                <input
+                                    type="text"
+                                    prop:value=move || deliverable_link.get()
+                                    on:input=move |ev| deliverable_link.set(event_target_value(&ev))
+                                    placeholder="Enter Google Drive folder link"
+                                    class="w-full px-6 py-4 text-lg border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
+                                    disabled=move || is_processing.get()
+                                />
+                            </div>
                         </div>
 
                         <button

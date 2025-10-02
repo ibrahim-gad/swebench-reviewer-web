@@ -1,0 +1,128 @@
+#[cfg(feature = "ssr")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssr")]
+use axum::{Json, response::Response, body::Body};
+
+#[cfg(feature = "ssr")]
+#[derive(Serialize, Deserialize)]
+pub struct GetFileContentRequest {
+    pub file_type: String,
+    pub file_paths: Vec<String>,
+}
+
+#[cfg(feature = "ssr")]
+#[derive(Serialize, Deserialize)]
+pub struct GetTestListsRequest {
+    pub file_paths: Vec<String>,
+}
+
+#[cfg(feature = "ssr")]
+#[derive(Serialize, Deserialize)]
+pub struct TestLists {
+    pub fail_to_pass: Vec<String>,
+    pub pass_to_pass: Vec<String>,
+}
+
+#[cfg(feature = "ssr")]
+pub fn get_file_content(file_type: String, file_paths: Vec<String>) -> Result<String, String> {
+    use std::fs;
+    
+    let file_extensions = match file_type.as_str() {
+        "base" => vec!["base.log", "base.txt"],
+        "before" => vec!["before.log", "before.txt"],
+        "after" => vec!["after.log", "after.txt"],
+        "agent" => vec!["post_agent_patch"],
+        "main_json" => vec!["main/", "report.json", "summary.json"],
+        "report" => vec!["report.json", "analysis.json", "results.json"],
+        _ => return Err(format!("Unknown file type: {}", file_type)),
+    };
+
+    for path in &file_paths {
+        let path_lower = path.to_lowercase();
+        for extension in &file_extensions {
+            if path_lower.contains(extension) {
+                match fs::read_to_string(path) {
+                    Ok(content) => return Ok(content),
+                    Err(e) => {
+                        eprintln!("Failed to read file {}: {}", path, e);
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(format!("No {} file found in the provided paths", file_type))
+}
+
+#[cfg(feature = "ssr")]
+pub fn get_test_lists(file_paths: Vec<String>) -> Result<TestLists, String> {
+    use std::fs;
+    
+    let main_json_path = file_paths.iter()
+        .find(|path| path.to_lowercase().contains("main.json") || path.to_lowercase().contains("main/"))
+        .ok_or("main.json file not found in provided paths".to_string())?;
+    
+    let main_json_content = fs::read_to_string(main_json_path)
+        .map_err(|e| format!("Failed to read main.json: {}", e))?;
+    
+    let main_json: serde_json::Value = serde_json::from_str(&main_json_content)
+        .map_err(|e| format!("Failed to parse main.json: {}", e))?;
+    
+    let empty_vec: Vec<serde_json::Value> = vec![];
+    let fail_to_pass: Vec<String> = main_json.get("fail_to_pass")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty_vec)
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|s| s.to_string())
+        .collect();
+    
+    let pass_to_pass: Vec<String> = main_json.get("pass_to_pass")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty_vec)
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|s| s.to_string())
+        .collect();
+    
+    Ok(TestLists {
+        fail_to_pass,
+        pass_to_pass,
+    })
+}
+
+// API endpoint handlers
+#[cfg(feature = "ssr")]
+pub async fn get_file_content_endpoint(
+    Json(payload): Json<GetFileContentRequest>,
+) -> Response {
+    match get_file_content(payload.file_type, payload.file_paths) {
+        Ok(content) => Response::builder()
+            .status(200)
+            .header("Content-Type", "text/plain")
+            .body(Body::from(content))
+            .unwrap(),
+        Err(error) => Response::builder()
+            .status(400)
+            .body(Body::from(error))
+            .unwrap(),
+    }
+}
+
+#[cfg(feature = "ssr")]
+pub async fn get_test_lists_endpoint(
+    Json(payload): Json<GetTestListsRequest>,
+) -> Response {
+    match get_test_lists(payload.file_paths) {
+        Ok(result) => Response::builder()
+            .status(200)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_string(&result).unwrap()))
+            .unwrap(),
+        Err(error) => Response::builder()
+            .status(400)
+            .body(Body::from(error))
+            .unwrap(),
+    }
+}
