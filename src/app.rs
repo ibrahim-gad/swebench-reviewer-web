@@ -5,6 +5,15 @@ use leptos_router::{
     StaticSegment,
 };
 
+pub mod types;
+pub mod processing;
+pub mod file_operations;
+pub mod test_lists;
+pub mod search_results;
+pub mod file_viewer;
+pub mod test_checker;
+pub mod log_search_results;
+pub mod report_checker_interface;
 pub mod report_checker;
 use report_checker::ReportCheckerPage;
 
