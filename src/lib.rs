@@ -1,3 +1,5 @@
+#![recursion_limit = "1024"]
+
 pub mod app;
 #[cfg(feature = "ssr")]
 pub mod api;
@@ -5,8 +7,6 @@ pub mod api;
 pub mod auth;
 #[cfg(feature = "ssr")]
 pub mod drive;
-#[cfg(feature = "ssr")]
-pub mod session;
 
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]

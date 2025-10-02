@@ -1,203 +1,142 @@
-use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::collections::HashMap;
 use anyhow::{Result, anyhow};
-use uuid::Uuid;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default, Clone)]
-pub struct GoogleTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub id_token: String,
-    pub expires_in: Option<u64>,
-    pub scope: Option<String>,
-    pub token_type: Option<String>,
-    pub expires_at: Option<u64>, // Added for tracking expiration
+#[cfg(feature = "ssr")]
+use jsonwebtoken::{encode, EncodingKey, Header, Algorithm};
+
+#[derive(Debug, Deserialize)]
+struct ServiceAccountKey {
+    client_email: String,
+    private_key: String,
+    token_uri: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct OAuthState {
-    pub state: String,
-    pub code_verifier: String,
-    pub redirect_uri: String,
+#[derive(Debug, Serialize)]
+struct Claims {
+    iss: String,
+    scope: String,
+    aud: String,
+    exp: u64,
+    iat: u64,
 }
 
-// In-memory session storage for OAuth states (in production, use Redis or database)
-static mut OAUTH_STATES: Option<HashMap<String, OAuthState>> = None;
+// Global token cache
+#[cfg(feature = "ssr")]
+static ACCESS_TOKEN_CACHE: once_cell::sync::Lazy<Arc<Mutex<Option<(String, u64)>>>> = 
+    once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(None)));
 
-fn get_oauth_states() -> &'static mut HashMap<String, OAuthState> {
-    unsafe {
-        if OAUTH_STATES.is_none() {
-            OAUTH_STATES = Some(HashMap::new());
+/// Get a valid access token for Google Drive API using service account
+#[cfg(feature = "ssr")]
+pub async fn get_access_token() -> Result<String> {
+    // Check if we have a cached token that's still valid
+    {
+        let cache = ACCESS_TOKEN_CACHE.lock().unwrap();
+        if let Some((token, expires_at)) = cache.as_ref() {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            // Token is valid if it expires more than 5 minutes from now
+            if *expires_at > now + 300 {
+                return Ok(token.clone());
+            }
         }
-        OAUTH_STATES.as_mut().unwrap()
     }
-}
 
-// Google OAuth2 configuration
-pub fn get_google_client_id() -> Result<String> {
-    std::env::var("GOOGLE_CLIENT_ID")
-        .or_else(|_: std::env::VarError| Ok("YOUR_GOOGLE_CLIENT_ID".to_string())) // Fallback for development
-        .map_err(|e: std::env::VarError| anyhow!("GOOGLE_CLIENT_ID not set: {}", e))
-}
-
-pub fn get_google_client_secret() -> Result<String> {
-    std::env::var("GOOGLE_CLIENT_SECRET")
-        .or_else(|_: std::env::VarError| Ok("YOUR_GOOGLE_CLIENT_SECRET".to_string())) // Fallback for development
-        .map_err(|e: std::env::VarError| anyhow!("GOOGLE_CLIENT_SECRET not set: {}", e))
-}
-
-// Generate PKCE code verifier and challenge
-fn generate_pkce() -> (String, String) {
-    let code_verifier = URL_SAFE_NO_PAD.encode(Uuid::new_v4().as_bytes());
-    let challenge = URL_SAFE_NO_PAD.encode(
-        &ring::digest::digest(&ring::digest::SHA256, code_verifier.as_bytes()).as_ref()
-    );
-    (code_verifier, challenge)
-}
-
-// Create OAuth2 authorization URL
-pub fn create_oauth_url(redirect_uri: String) -> Result<(String, String)> {
-    let client_id = get_google_client_id()?;
-    let state = Uuid::new_v4().to_string();
-    let (code_verifier, code_challenge) = generate_pkce();
+    // Get new token
+    let token = fetch_new_token().await?;
     
-    // Store OAuth state
-    let oauth_state = OAuthState {
-        state: state.clone(),
-        code_verifier,
-        redirect_uri: redirect_uri.clone(),
-    };
-    
-    get_oauth_states().insert(state.clone(), oauth_state);
-    
-    let scope = "openid email profile https://www.googleapis.com/auth/drive.readonly";
-    let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&code_challenge={}&code_challenge_method=S256&access_type=offline&prompt=consent",
-        urlencoding::encode(&client_id),
-        urlencoding::encode(&redirect_uri),
-        urlencoding::encode(scope),
-        urlencoding::encode(&state),
-        urlencoding::encode(&code_challenge)
-    );
-    
-    Ok((auth_url, state))
+    Ok(token)
 }
 
-// Exchange authorization code for tokens
 #[cfg(feature = "ssr")]
-pub async fn exchange_code_for_tokens(code: String, state: String) -> Result<GoogleTokens> {
-    use reqwest::Client;
+async fn fetch_new_token() -> Result<String> {
+    // Read service account key file
+    let credentials_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
+        .map_err(|_| anyhow!("GOOGLE_APPLICATION_CREDENTIALS environment variable not set"))?;
+
+    let key_content = std::fs::read_to_string(&credentials_path)
+        .map_err(|e| anyhow!("Failed to read service account key from {}: {}", credentials_path, e))?;
+
+    let service_account: ServiceAccountKey = serde_json::from_str(&key_content)
+        .map_err(|e| anyhow!("Failed to parse service account JSON: {}", e))?;
+
+    // Create JWT for authentication
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let claims = Claims {
+        iss: service_account.client_email.clone(),
+        scope: "https://www.googleapis.com/auth/drive.readonly".to_string(),
+        aud: service_account.token_uri.clone(),
+        exp: now + 3600, // Token expires in 1 hour
+        iat: now,
+    };
+
+    let header = Header::new(Algorithm::RS256);
     
-    // Verify state and get stored OAuth data
-    let oauth_state = get_oauth_states()
-        .remove(&state)
-        .ok_or_else(|| anyhow!("Invalid or expired OAuth state"))?;
-    
-    let client_id = get_google_client_id()?;
-    let client_secret = get_google_client_secret()?;
-    
-    let client = Client::new();
+    // Remove the header and footer from the PEM key
+    let private_key = service_account.private_key
+        .replace("-----BEGIN PRIVATE KEY-----", "")
+        .replace("-----END PRIVATE KEY-----", "")
+        .replace("\n", "");
+
+    let key = EncodingKey::from_rsa_pem(service_account.private_key.as_bytes())
+        .map_err(|e| anyhow!("Failed to parse private key: {}", e))?;
+
+    let jwt = encode(&header, &claims, &key)
+        .map_err(|e| anyhow!("Failed to create JWT: {}", e))?;
+
+    // Exchange JWT for access token
+    let client = reqwest::Client::new();
     let params = [
-        ("client_id", client_id.as_str()),
-        ("client_secret", client_secret.as_str()),
-        ("code", code.as_str()),
-        ("grant_type", "authorization_code"),
-        ("redirect_uri", oauth_state.redirect_uri.as_str()),
-        ("code_verifier", oauth_state.code_verifier.as_str()),
+        ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+        ("assertion", &jwt),
     ];
-    
+
     let response = client
-        .post("https://oauth2.googleapis.com/token")
+        .post(&service_account.token_uri)
         .form(&params)
         .send()
-        .await?;
-    
+        .await
+        .map_err(|e| anyhow!("Failed to request access token: {}", e))?;
+
     if !response.status().is_success() {
         let error_text = response.text().await?;
-        return Err(anyhow!("Failed to exchange code for tokens: {}", error_text));
+        return Err(anyhow!("Failed to get access token: {}", error_text));
     }
-    
-    let mut tokens: GoogleTokens = response.json().await?;
-    
-    // Calculate expiration time
-    if let Some(expires_in) = tokens.expires_in {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        tokens.expires_at = Some(now + expires_in);
+
+    let token_response: serde_json::Value = response.json().await
+        .map_err(|e| anyhow!("Failed to parse token response: {}", e))?;
+
+    let access_token = token_response["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("No access_token in response"))?
+        .to_string();
+
+    let expires_in = token_response["expires_in"]
+        .as_u64()
+        .unwrap_or(3600);
+
+    // Cache the token
+    let expires_at = now + expires_in;
+    {
+        let mut cache = ACCESS_TOKEN_CACHE.lock().unwrap();
+        *cache = Some((access_token.clone(), expires_at));
     }
-    
-    Ok(tokens)
+
+    Ok(access_token)
 }
 
-// Refresh access token using refresh token
+/// Initialize service account auth (just validates that credentials exist)
 #[cfg(feature = "ssr")]
-pub async fn refresh_access_token(tokens: &GoogleTokens) -> Result<GoogleTokens> {
-    use reqwest::Client;
-    
-    let client_id = get_google_client_id()?;
-    let client_secret = get_google_client_secret()?;
-    
-    let client = Client::new();
-    let params = [
-        ("client_id", client_id.as_str()),
-        ("client_secret", client_secret.as_str()),
-        ("refresh_token", tokens.refresh_token.as_str()),
-        ("grant_type", "refresh_token"),
-    ];
-    
-    let response = client
-        .post("https://oauth2.googleapis.com/token")
-        .form(&params)
-        .send()
-        .await?;
-    
-    if !response.status().is_success() {
-        let error_text = response.text().await?;
-        return Err(anyhow!("Failed to refresh token: {}", error_text));
-    }
-    
-    let response_json: serde_json::Value = response.json().await?;
-    
-    let access_token = response_json["access_token"]
-        .as_str()
-        .ok_or_else(|| anyhow!("No access_token in refresh response"))?
-        .to_string();
-    
-    let id_token = response_json["id_token"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    
-    let expires_in = response_json["expires_in"].as_u64();
-    let scope = response_json["scope"].as_str().map(|s| s.to_string());
-    let token_type = response_json["token_type"].as_str().map(|s| s.to_string());
-    
-    // Calculate expiration time
-    let expires_at = if let Some(expires_in) = expires_in {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        Some(now + expires_in)
-    } else {
-        None
-    };
-    
-    Ok(GoogleTokens {
-        access_token,
-        refresh_token: tokens.refresh_token.clone(),
-        id_token,
-        expires_in,
-        scope,
-        token_type,
-        expires_at,
-    })
-}
+pub async fn init_service_account_auth() -> Result<()> {
+    let credentials_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
+        .map_err(|_| anyhow!("GOOGLE_APPLICATION_CREDENTIALS environment variable not set"))?;
 
-// Check if token is expired
-pub fn is_token_expired(tokens: &GoogleTokens) -> bool {
-    if let Some(expires_at) = tokens.expires_at {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        now >= expires_at.saturating_sub(300) // Refresh 5 minutes before expiry
-    } else {
-        false // If no expiry info, assume it's still valid
+    if !std::path::Path::new(&credentials_path).exists() {
+        return Err(anyhow!("Service account key file not found at: {}", credentials_path));
     }
+
+    // Try to get a token to validate the credentials
+    get_access_token().await?;
+
+    Ok(())
 }

@@ -5,13 +5,11 @@ use std::fs;
 #[cfg(feature = "ssr")]
 use tempfile::TempDir;
 #[cfg(feature = "ssr")]
-use axum::{Json, extract::{State, Query}, response::Response, http::{HeaderMap, header::SET_COOKIE}, body::Body};
+use axum::{Json, response::Response, body::Body};
 #[cfg(feature = "ssr")]
 use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_contents};
 #[cfg(feature = "ssr")]
-use crate::auth::{create_oauth_url, exchange_code_for_tokens, refresh_access_token, is_token_expired};
-#[cfg(feature = "ssr")]
-use crate::session::SessionManager;
+use crate::auth::get_access_token;
 
 #[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
@@ -49,211 +47,12 @@ pub struct DownloadRequest {
 }
 
 #[cfg(feature = "ssr")]
-#[derive(Serialize, Deserialize)]
-pub struct AuthResponse {
-    pub auth_url: String,
-}
-
-#[cfg(feature = "ssr")]
-#[derive(Serialize, Deserialize)]
-pub struct CallbackQuery {
-    pub code: Option<String>,
-    pub state: Option<String>,
-    pub error: Option<String>,
-}
-
-#[cfg(feature = "ssr")]
-#[derive(Serialize, Deserialize)]
-pub struct UserInfo {
-    pub name: String,
-    pub email: String,
-    pub authenticated: bool,
-}
-
-#[cfg(feature = "ssr")]
-fn extract_session_id(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("cookie")
-        .and_then(|cookie| cookie.to_str().ok())
-        .and_then(|cookie_str| {
-            cookie_str
-                .split(';')
-                .find_map(|cookie| {
-                    let parts: Vec<&str> = cookie.trim().split('=').collect();
-                    if parts.len() == 2 && parts[0] == "session_id" {
-                        Some(parts[1].to_string())
-                    } else {
-                        None
-                    }
-                })
-        })
-}
-
-#[cfg(feature = "ssr")]
-async fn get_valid_access_token(
-    session_manager: &SessionManager,
-    session_id: &str,
-) -> Result<String, String> {
-    let session_data = session_manager
-        .get_session(session_id)
-        .ok_or("Invalid session")?;
-
-    let mut tokens = session_data.user_tokens;
-
-    if is_token_expired(&tokens) {
-        tokens = refresh_access_token(&tokens)
-            .await
-            .map_err(|e| format!("Failed to refresh token: {}", e))?;
-        
-        session_manager.update_session(session_id, tokens.clone());
-    }
-
-    Ok(tokens.access_token)
-}
-
-// OAuth endpoints
-#[cfg(feature = "ssr")]
-pub async fn login() -> Result<Json<AuthResponse>, String> {
-    let redirect_uri = "http://localhost:3000/google-auth".to_string();
-    let (auth_url, _state) = create_oauth_url(redirect_uri)
-        .map_err(|e| format!("Failed to create auth URL: {}", e))?;
-
-    Ok(Json(AuthResponse { auth_url }))
-}
-
-#[cfg(feature = "ssr")]
-pub async fn auth_callback(
-    State(session_manager): State<SessionManager>,
-    Query(params): Query<CallbackQuery>,
-) -> Response {
-    if let Some(error) = params.error {
-        return Response::builder()
-            .status(400)
-            .body(Body::from(format!("OAuth error: {}", error)))
-            .unwrap();
-    }
-
-    let code = match params.code {
-        Some(code) => code,
-        None => return Response::builder()
-            .status(400)
-            .body(Body::from("Missing authorization code"))
-            .unwrap(),
-    };
-
-    let state = match params.state {
-        Some(state) => state,
-        None => return Response::builder()
-            .status(400)
-            .body(Body::from("Missing state parameter"))
-            .unwrap(),
-    };
-
-    let tokens = match exchange_code_for_tokens(code, state).await {
-        Ok(tokens) => tokens,
-        Err(e) => return Response::builder()
-            .status(500)
-            .body(Body::from(format!("Failed to exchange code for tokens: {}", e)))
-            .unwrap(),
-    };
-
-    let session_id = session_manager.create_session(tokens);
-    let cookie_value = format!("session_id={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000", session_id);
-    
-    Response::builder()
-        .status(302)
-        .header("Location", "/")
-        .header(SET_COOKIE, cookie_value)
-        .body(Body::empty())
-        .unwrap()
-}
-
-#[cfg(feature = "ssr")]
-pub async fn logout(
-    State(session_manager): State<SessionManager>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    if let Some(session_id) = extract_session_id(&headers) {
-        session_manager.remove_session(&session_id);
-    }
-
-    Json(serde_json::json!({"success": true}))
-}
-
-#[cfg(feature = "ssr")]
-pub async fn user_info(
-    State(session_manager): State<SessionManager>,
-    headers: HeaderMap,
-) -> Response {
-    let session_id = match extract_session_id(&headers) {
-        Some(id) => id,
-        None => return Response::builder()
-            .status(401)
-            .body(Body::from("Not authenticated"))
-            .unwrap(),
-    };
-
-    let session_data = match session_manager.get_session(&session_id) {
-        Some(data) => data,
-        None => return Response::builder()
-            .status(401)
-            .body(Body::from("Invalid session"))
-            .unwrap(),
-    };
-
-    // Decode JWT to get user info (without verification for simplicity)
-    // In production, you should verify the JWT signature properly
-    let parts: Vec<&str> = session_data.user_tokens.id_token.split('.').collect();
-    if parts.len() != 3 {
-        return Response::builder()
-            .status(400)
-            .body(Body::from("Invalid JWT format"))
-            .unwrap();
-    }
-    
-    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-    let payload = match URL_SAFE_NO_PAD.decode(parts[1]) {
-        Ok(payload) => payload,
-        Err(e) => return Response::builder()
-            .status(400)
-            .body(Body::from(format!("Failed to decode JWT payload: {}", e)))
-            .unwrap(),
-    };
-    
-    let claims: serde_json::Value = match serde_json::from_slice(&payload) {
-        Ok(claims) => claims,
-        Err(e) => return Response::builder()
-            .status(400)
-            .body(Body::from(format!("Failed to parse JWT claims: {}", e)))
-            .unwrap(),
-    };
-
-    let name = claims["name"].as_str().unwrap_or("User").to_string();
-    let email = claims["email"].as_str().unwrap_or("").to_string();
-
-    let user_info = UserInfo {
-        name,
-        email,
-        authenticated: true,
-    };
-
-    Response::builder()
-        .status(200)
-        .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_string(&user_info).unwrap()))
-        .unwrap()
-}
-
-#[cfg(feature = "ssr")]
 async fn validate_deliverable_impl(
-    session_manager: SessionManager,
-    headers: HeaderMap,
     payload: ValidateRequest,
 ) -> Result<ValidationResult, String> {
-    let session_id = extract_session_id(&headers)
-        .ok_or("Not authenticated")?;
-
-    let access_token = get_valid_access_token(&session_manager, &session_id).await?;
+    let access_token = get_access_token()
+        .await
+        .map_err(|e| format!("Failed to get access token: {}", e))?;
 
     let folder_id = extract_drive_folder_id(&payload.folder_link)
         .ok_or("Invalid Google Drive folder link. Please provide a valid folder URL.")?;
@@ -335,6 +134,24 @@ async fn validate_deliverable_impl(
         }
     }
 
+    let results_folder = files.iter().find(|file| {
+        let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+        file_name == "results" && file["mimeType"].as_str() == Some("application/vnd.google-apps.folder")
+    }).ok_or("Missing required 'results' folder (case insensitive search)".to_string())?;
+
+    let results_folder_id = results_folder["id"].as_str().ok_or("Invalid results folder ID")?;
+
+    let results_contents = get_folder_contents(results_folder_id, &access_token).await
+        .map_err(|e| format!("Failed to get results folder contents: {}", e))?;
+
+    let results_files = results_contents["files"].as_array()
+        .ok_or("Invalid results folder contents response")?;
+
+    let report_file = results_files.iter().find(|file| {
+        let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+        file_name == "report.json" && file["mimeType"].as_str() != Some("application/vnd.google-apps.folder")
+    }).ok_or("Missing required file: report.json in results folder".to_string())?;
+
     let mut files_to_download = Vec::new();
 
     if let Some(instance_file) = files.iter().find(|file| {
@@ -361,6 +178,12 @@ async fn validate_deliverable_impl(
         }
     }
 
+    files_to_download.push(FileInfo {
+        id: report_file["id"].as_str().unwrap_or("").to_string(),
+        name: report_file["name"].as_str().unwrap_or("").to_string(),
+        path: format!("results/{}", report_file["name"].as_str().unwrap_or("")),
+    });
+
     Ok(ValidationResult {
         files_to_download,
         folder_id: folder_id.to_string(),
@@ -369,11 +192,9 @@ async fn validate_deliverable_impl(
 
 #[cfg(feature = "ssr")]
 pub async fn validate_deliverable(
-    State(session_manager): State<SessionManager>,
-    headers: HeaderMap,
     Json(payload): Json<ValidateRequest>,
 ) -> Response {
-    match validate_deliverable_impl(session_manager, headers, payload).await {
+    match validate_deliverable_impl(payload).await {
         Ok(result) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")
@@ -388,17 +209,14 @@ pub async fn validate_deliverable(
 
 #[cfg(feature = "ssr")]
 async fn download_deliverable_impl(
-    session_manager: SessionManager,
-    headers: HeaderMap,
     payload: DownloadRequest,
 ) -> Result<DownloadResult, String> {
     #[cfg(feature = "ssr")]
     use reqwest::header::AUTHORIZATION;
 
-    let session_id = extract_session_id(&headers)
-        .ok_or("Not authenticated")?;
-
-    let access_token = get_valid_access_token(&session_manager, &session_id).await?;
+    let access_token = get_access_token()
+        .await
+        .map_err(|e| format!("Failed to get access token: {}", e))?;
 
     let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp directory: {}", e))?;
     let temp_path = temp_dir.path().to_string_lossy().to_string();
@@ -805,11 +623,9 @@ pub async fn analyze_logs_endpoint(
 
 #[cfg(feature = "ssr")]
 pub async fn download_deliverable(
-    State(session_manager): State<SessionManager>,
-    headers: HeaderMap,
     Json(payload): Json<DownloadRequest>,
 ) -> Response {
-    match download_deliverable_impl(session_manager, headers, payload).await {
+    match download_deliverable_impl(payload).await {
         Ok(result) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")

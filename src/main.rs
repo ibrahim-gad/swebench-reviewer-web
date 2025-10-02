@@ -2,52 +2,37 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::{Router, routing::{post, get}};
+    use axum::{Router, routing::post};
     use leptos::logging::log;
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use swe_reviewer_web::app::*;
-    use swe_reviewer_web::session::SessionManager;
-    use swe_reviewer_web::api::{validate_deliverable, download_deliverable, login, auth_callback, logout, user_info, get_file_content_endpoint, get_test_lists_endpoint, search_logs_endpoint, analyze_logs_endpoint};
+    use swe_reviewer_web::api::{validate_deliverable, download_deliverable, get_file_content_endpoint, get_test_lists_endpoint, search_logs_endpoint, analyze_logs_endpoint};
+    use swe_reviewer_web::auth::init_service_account_auth;
+
+    // Initialize service account authentication
+    if let Err(e) = init_service_account_auth().await {
+        log!("Warning: Failed to initialize service account authentication: {}", e);
+        log!("Make sure GOOGLE_APPLICATION_CREDENTIALS environment variable is set");
+    } else {
+        log!("Service account authentication initialized successfully");
+    }
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
     let leptos_options = conf.leptos_options;
 
-    // Initialize session manager with file-based persistence
-    let session_manager = SessionManager::new_with_persistence()
-        .await
-        .unwrap_or_else(|e| {
-            log!("Warning: Failed to load sessions from file, starting fresh: {}", e);
-            SessionManager::new()
-        });
-
-    // Start periodic session cleanup task
-    let cleanup_manager = session_manager.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Run every hour
-        loop {
-            interval.tick().await;
-            cleanup_manager.cleanup_expired_sessions();
-        }
-    });
-
     // Generate the list of routes in your Leptos App
     let routes = generate_route_list(App);
 
-    // Create API router with SessionManager state
+    // Create API router
     let api_router = Router::new()
-        .route("/api/login", get(login))
-        .route("/google-auth", get(auth_callback))
-        .route("/api/logout", post(logout))
-        .route("/api/user", get(user_info))
         .route("/api/validate", post(validate_deliverable))
         .route("/api/download", post(download_deliverable))
         .route("/api/get_file_content", post(get_file_content_endpoint))
         .route("/api/get_test_lists", post(get_test_lists_endpoint))
         .route("/api/search_logs", post(search_logs_endpoint))
-        .route("/api/analyze_logs", post(analyze_logs_endpoint))
-        .with_state(session_manager);
+        .route("/api/analyze_logs", post(analyze_logs_endpoint));
 
     // Create main router with LeptosOptions state
     let app = Router::new()

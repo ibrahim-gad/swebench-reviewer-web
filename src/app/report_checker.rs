@@ -66,6 +66,7 @@ pub struct FileContents {
     pub after: Option<FileContent>,
     pub agent: Option<FileContent>,
     pub main_json: Option<FileContent>,
+    pub report: Option<FileContent>,
     pub analysis: Option<FileContent>,
     pub base_analysis: Option<FileContent>,
     pub before_analysis: Option<FileContent>,
@@ -81,6 +82,7 @@ impl FileContents {
             "after" => self.after.as_ref(),
             "agent" => self.agent.as_ref(),
             "main_json" => self.main_json.as_ref(),
+            "report" => self.report.as_ref(),
             "analysis" => self.analysis.as_ref(),
             "base_analysis" => self.base_analysis.as_ref(),
             "before_analysis" => self.before_analysis.as_ref(),
@@ -173,7 +175,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
             let mut contents = FileContents::default();
             
             // Load each file type
-            let _file_types = vec!["base", "before", "after", "agent", "main_json"];
+            let _file_types = vec!["base", "before", "after", "agent", "main_json", "report"];
             
             for _file_type in _file_types {
                 #[cfg(feature = "hydrate")]
@@ -188,9 +190,11 @@ pub fn ReportCheckerPage() -> impl IntoView {
                 {
                     if response.ok() {
                         if let Ok(content) = response.text().await {
+                            let is_json_type = matches!(_file_type, "main_json" | "report")
+                                || _file_type.contains("json");
                             let file_content = FileContent {
                                 content,
-                                file_type: if _file_type.contains("json") { "json" } else { "text" }.to_string(),
+                                file_type: if is_json_type { "json" } else { "text" }.to_string(),
                             };
                             
                             match _file_type {
@@ -199,6 +203,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
                                 "after" => contents.after = Some(file_content),
                                 "agent" => contents.agent = Some(file_content),
                                 "main_json" => contents.main_json = Some(file_content),
+                                "report" => contents.report = Some(file_content),
                                 _ => {}
                             }
                         }
@@ -617,8 +622,11 @@ pub fn ReportCheckerPage() -> impl IntoView {
                     pass_to_pass_filter=pass_to_pass_filter
                     search_for_test=search_for_test
                     active_tab=active_tab
+                    active_main_tab=active_main_tab
                     search_results=search_results
                     search_result_indices=search_result_indices
+                    file_contents=file_contents
+                    loading_files=loading_files
                     reset_state=reset_state
                 />
             </Show>
@@ -637,8 +645,11 @@ fn ReportCheckerInterface(
     pass_to_pass_filter: RwSignal<String>,
     search_for_test: impl Fn(String) + Send + Sync + 'static + Copy,
     active_tab: RwSignal<String>,
+    active_main_tab: RwSignal<String>,
     search_results: RwSignal<LogSearchResults>,
     search_result_indices: RwSignal<HashMap<String, usize>>,
+    file_contents: RwSignal<FileContents>,
+    loading_files: RwSignal<bool>,
     reset_state: impl Fn() + Send + Sync + 'static + Copy,
 ) -> impl IntoView {
     // Navigation functions for search results
@@ -664,11 +675,23 @@ fn ReportCheckerInterface(
         search_result_indices.set(indices);
     };
 
+    let manual_tab_active = move || active_main_tab.get() == "manual_checker";
+    let input_tab_active = move || active_main_tab.get() == "input";
+
+    let input_tabs = vec![
+        ("base", "Base"),
+        ("before", "Before"),
+        ("after", "After"),
+        ("agent", "Agent"),
+        ("main_json", "Main JSON"),
+        ("report", "Report JSON"),
+    ];
+
     view! {
         <div class="flex flex-col h-full overflow-hidden">
             <div class="flex-none bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1 shadow-sm mb-1">
                 // Single line with back button, centered title, and copy functionality
-                <div class="flex items-center justify-between relative">
+            <div class="flex items-center justify-between gap-4 relative">
                     // Back button
                                 <button
                                     on:click=move |_| reset_state()
@@ -682,13 +705,51 @@ fn ReportCheckerInterface(
 
                     // Title - Centered
                     <div class="flex justify-center absolute left-1/2 transform -translate-x-1/2">
-                        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-                            Tests Checker
-                        </h1>
+                        <div class="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded">
+                            <button
+                                on:click=move |_| {
+                                    active_main_tab.set("manual_checker".to_string());
+                                }
+                                class=move || {
+                                    if manual_tab_active() {
+                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                            .to_string()
+                                    } else {
+                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                            >
+                                Tests Checker
+                            </button>
+                            <button
+                                on:click=move |_| {
+                                    active_main_tab.set("input".to_string());
+                                    if let Some(first_tab) = input_tabs.first() {
+                                        active_tab.set(first_tab.0.to_string());
+                                    }
+                                }
+                                class=move || {
+                                    if input_tab_active() {
+                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                            .to_string()
+                                    } else {
+                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                            >
+                                Input
+                            </button>
+                        </div>
                 </div>
 
                     // Copy Selected Test Name
-                    <div class="flex flex-col gap-0">
+                    <Show
+                        when=manual_tab_active
+                        fallback=|| view! { <div></div> }
+                    >
+                        <div class="flex flex-col gap-0">
                         <div class="flex items-center gap-2">
                             <span class="text-sm text-gray-600 dark:text-gray-400 font-mono max-w-xs truncate">
                                 {move || {
@@ -720,14 +781,18 @@ fn ReportCheckerInterface(
                                 </svg>
                             </button>
                         </div>
-                    </div>
+                        </div>
+                    </Show>
                 </div>
             </div>
 
             // Main Content
             <div class="flex-1 overflow-hidden bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-                // Test Lists Section (Top Half)
-                <div class="h-1/2 border-b border-gray-200 dark:border-gray-700">
+                <Show
+                    when=input_tab_active
+                    fallback=move || view! {
+                        // Test Lists Section (Top Half)
+                        <div class="h-1/2 border-b border-gray-200 dark:border-gray-700">
                     <div class="h-full flex flex-row">
                         // Fail to Pass Tests
                         <div class="w-1/2 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -1205,6 +1270,163 @@ fn ReportCheckerInterface(
                             </div>
                         </div>
                     </div>
+                }
+                >
+                    <div class="flex h-full">
+                        <div class="w-48 bg-gray-100 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 flex flex-col">
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "base" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("base".to_string());
+                                }
+                            >
+                                "Base"
+                            </button>
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "before" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("before".to_string());
+                                }
+                            >
+                                "Before"
+                            </button>
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "after" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("after".to_string());
+                                }
+                            >
+                                "After"
+                            </button>
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "agent" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("agent".to_string());
+                                }
+                            >
+                                "Agent"
+                            </button>
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "main_json" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("main_json".to_string());
+                                }
+                            >
+                                "Main JSON"
+                            </button>
+                            <button
+                                class=move || {
+                                    if active_tab.get() == "report" {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-r-2 border-blue-500"
+                                            .to_string()
+                                    } else {
+                                        "px-4 py-3 text-left text-sm font-medium transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                                on:click=move |_| {
+                                    active_tab.set("report".to_string());
+                                }
+                            >
+                                "Report JSON"
+                            </button>
+                        </div>
+                        <div class="flex-1 flex flex-col p-4 overflow-hidden">
+                            <Show
+                                when=move || loading_files.get()
+                                fallback=move || {
+                                    let active_tab_value = active_tab.get();
+                                    let contents = file_contents.get();
+                                    match contents.get(&active_tab_value) {
+                                        Some(file_content) => {
+                                            let text = file_content.content.clone();
+                                            let file_type = file_content.file_type.clone();
+                                            view! {
+                                                <>
+                                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 capitalize">
+                                                        {active_tab_value.replace('_', " ")} Content
+                                                    </h3>
+                                                    <div class="flex-1 min-h-0 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-900 text-gray-100">
+                                                        <pre class=move || {
+                                                            if file_type == "json" {
+                                                                "p-4 text-sm font-mono whitespace-pre-wrap text-green-300"
+                                                                    .to_string()
+                                                            } else {
+                                                                "p-4 text-sm font-mono whitespace-pre-wrap"
+                                                                    .to_string()
+                                                            }
+                                                        }>
+                                                            {text}
+                                                        </pre>
+                                                    </div>
+                                                </>
+                                            }.into_any()
+                                        }
+                                        None => {
+                                            view! {
+                                                <div class="flex items-center justify-center h-full">
+                                                    <div class="text-center text-gray-500 dark:text-gray-400">
+                                                        No content available for {active_tab_value.replace('_', " ")}
+                                                    </div>
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    }
+                                }
+                            >
+                                <div class="flex items-center justify-center h-full">
+                                    <div class="flex items-center gap-3 text-gray-600 dark:text-gray-300">
+                                        <svg class="animate-spin w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>Loading file contents...</span>
+                                    </div>
+                                </div>
+                            </Show>
+                        </div>
+                    </div>
+                </Show>
             </div>
         </div>
     }
