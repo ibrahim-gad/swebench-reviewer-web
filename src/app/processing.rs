@@ -130,6 +130,9 @@ pub fn handle_submit(
                             file_paths: download_data.downloaded_files.iter()
                                 .map(|f| f.path.clone())
                                 .collect(),
+                            deliverable_link: link.clone(),
+                            instance_id: String::new(),
+                            task_id: String::new(),
                         };
 
                         result.set(Some(processing_result));

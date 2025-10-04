@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+
 use crate::api::rust_log_parser::RustLogParser;
 use crate::app::types::{TestStatus, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
@@ -174,9 +177,9 @@ impl LogParser {
         base_path: &str,
         before_path: &str,
         after_path: &str,
-        agent_path: Option<&String>, // TODO: Use in rule checks
+        agent_path: Option<&String>,
         report_data: Option<&serde_json::Value>,
-        file_paths: &[String], // TODO: Use in rule checks
+        file_paths: &[String],
     ) -> LogAnalysisResult {
         let universe: Vec<String> = pass_to_pass_tests.iter()
             .chain(fail_to_pass_tests.iter())
@@ -199,10 +202,15 @@ impl LogParser {
         };
 
         // Rule checks
-        let rule_violations = self.perform_rule_checks(
+        let (rule_violations, dup_map) = self.perform_rule_checks(
+            &base_parsed,
+            &before_parsed,
+            &after_parsed,
+            agent_parsed,
             &base_s, &before_s, &after_s, &agent_s, &report_s,
             fail_to_pass_tests, pass_to_pass_tests,
-            base_path, before_path, after_path, file_paths
+            base_path, before_path, after_path, file_paths,
+            report_data
         );
 
         // Generate comprehensive test statuses for all stages
@@ -329,7 +337,7 @@ impl LogParser {
 
         let debug_info = DebugInfo {
             log_counts,
-            duplicate_examples_per_log: HashMap::new(), // TODO: Implement duplicate detection
+            duplicate_examples_per_log: dup_map,
         };
 
         LogAnalysisResult {
@@ -360,7 +368,8 @@ impl LogParser {
         let mut report_failed_tests = std::collections::HashSet::new();
         let mut report_passed_tests = std::collections::HashSet::new();
         
-        // Parse report.json to extract test results
+        // Parse report.json to extract test results using the same logic as C6 check
+        // Try different possible structures for report.json
         if let Some(results_array) = report_data.get("results").and_then(|r| r.as_array()) {
             for result in results_array {
                 if let (Some(test_name), Some(status)) = (result.get("test_name").and_then(|t| t.as_str()), result.get("status").and_then(|s| s.as_str())) {
@@ -371,8 +380,74 @@ impl LogParser {
                     }
                 }
             }
+        } else if let Some(test_results) = report_data.get("test_results").and_then(|r| r.as_array()) {
+            for result in test_results {
+                if let (Some(test_name), Some(status)) = (result.get("test_name").and_then(|t| t.as_str()), result.get("status").and_then(|s| s.as_str())) {
+                    match status.to_lowercase().as_str() {
+                        "failed" | "fail" => { report_failed_tests.insert(test_name.to_string()); }
+                        "passed" | "pass" | "success" => { report_passed_tests.insert(test_name.to_string()); }
+                        _ => {}
+                    }
+                }
+            }
+        } else if let Some(tests_obj) = report_data.get("tests").and_then(|t| t.as_object()) {
+            // Format: {"tests": {"test_name": {"status": "failed"}}}
+            for (test_name, test_data) in tests_obj {
+                if let Some(status) = test_data.get("status").and_then(|s| s.as_str()) {
+                    match status.to_lowercase().as_str() {
+                        "failed" | "fail" => { report_failed_tests.insert(test_name.clone()); }
+                        "passed" | "pass" | "success" => { report_passed_tests.insert(test_name.clone()); }
+                        _ => {}
+                    }
+                }
+            }
+        } else if let Some(obj) = report_data.as_object() {
+            // Check for SWE-bench format first
+            let mut found_swe_format = false;
+            for (_key, value) in obj {
+                if let Some(tests_status) = value.get("tests_status").and_then(|t| t.as_object()) {
+                    found_swe_format = true;
+                    
+                    // Parse all test categories
+                    for (_category, category_data) in tests_status {
+                        if let Some(category_obj) = category_data.as_object() {
+                            // Extract failed tests from "failure" arrays
+                            if let Some(failure_array) = category_obj.get("failure").and_then(|f| f.as_array()) {
+                                for test_item in failure_array {
+                                    if let Some(test_name) = test_item.as_str() {
+                                        report_failed_tests.insert(test_name.to_string());
+                                    }
+                                }
+                            }
+                            // Extract passed tests from "success" arrays
+                            if let Some(success_array) = category_obj.get("success").and_then(|f| f.as_array()) {
+                                for test_item in success_array {
+                                    if let Some(test_name) = test_item.as_str() {
+                                        report_passed_tests.insert(test_name.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break; // Found SWE-bench format, no need to check other keys
+                }
+            }
+            
+            // If not SWE-bench format, try direct mapping format: {"test_name": "status"}
+            if !found_swe_format {
+                for (test_name, status_val) in obj {
+                    if let Some(status) = status_val.as_str() {
+                        match status.to_lowercase().as_str() {
+                            "failed" | "fail" => { report_failed_tests.insert(test_name.clone()); }
+                            "passed" | "pass" | "success" => { report_passed_tests.insert(test_name.clone()); }
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
         
+        // Map test names to their status
         for name in names {
             if report_failed_tests.contains(name) {
                 out.insert(name.clone(), "failed".to_string());
@@ -388,6 +463,10 @@ impl LogParser {
 
     fn perform_rule_checks(
         &self,
+        base_parsed: &ParsedLog,
+        before_parsed: &ParsedLog,
+        after_parsed: &ParsedLog,
+        agent_parsed: Option<&ParsedLog>,
         base_s: &HashMap<String, String>,
         before_s: &HashMap<String, String>,
         after_s: &HashMap<String, String>,
@@ -395,92 +474,449 @@ impl LogParser {
         report_s: &HashMap<String, String>,
         fail_to_pass_tests: &[String],
         pass_to_pass_tests: &[String],
-        base_path: &str, // TODO: Use in rule checks
-        before_path: &str, // TODO: Use in rule checks
-        after_path: &str, // TODO: Use in rule checks
-        file_paths: &[String], // TODO: Use in rule checks
-    ) -> RuleViolations {
+        base_path: &str,
+        before_path: &str,
+        after_path: &str,
+        file_paths: &[String],
+        report_data: Option<&serde_json::Value>,
+    ) -> (RuleViolations, HashMap<String, Vec<String>>) {
+        println!("Performing rule checks...");
+        
         // C1: P2P tests that are failed in base
         let c1_hits: Vec<String> = pass_to_pass_tests.iter()
             .filter(|t| base_s.get(*t) == Some(&"failed".to_string()))
             .cloned()
             .collect();
+        let c1 = !c1_hits.is_empty();
+        println!("C1 check: {} violations", c1_hits.len());
 
-        // C2: Any test that failed in after
+        // C2: Any test that failed in after (not: "not passed")
         let c2_hits: Vec<String> = fail_to_pass_tests.iter()
             .chain(pass_to_pass_tests.iter())
             .filter(|t| after_s.get(*t) == Some(&"failed".to_string()))
             .cloned()
             .collect();
+        let c2 = !c2_hits.is_empty();
+        println!("C2 check: {} violations", c2_hits.len());
 
         // C3: F2P tests that are successful in before
         let c3_hits: Vec<String> = fail_to_pass_tests.iter()
             .filter(|t| before_s.get(*t) == Some(&"passed".to_string()))
             .cloned()
             .collect();
+        let c3 = !c3_hits.is_empty();
+        println!("C3 check: {} violations", c3_hits.len());
 
         // C4: P2P tests missing in base and not passing in before
-        let mut c4_hits: Vec<String> = Vec::new();
+        // Logic:
+        // - If P2P passed in base → Skip (don't check)
+        // - If P2P is missing in base → Check before:
+        //   - If passing in before → No violation
+        //   - If missing or failed in before → Violation
+        let mut c4_hits: Vec<String> = vec![];
         for t in pass_to_pass_tests {
             let b = base_s.get(t).map(String::as_str).unwrap_or("missing");
             let be = before_s.get(t).map(String::as_str).unwrap_or("missing");
             
-            if b == "missing" && be != "passed" {
-                c4_hits.push(format!("{} (missing in base, {} in before)", t, be));
+            // If P2P passed in base, skip this test (no need to check before)
+            if b == "passed" {
+                continue;
             }
-        }
-
-        // C5: Duplicates (simplified for now)
-        let c5_hits: Vec<String> = Vec::new(); // TODO: Implement duplicate detection
-
-        // C6: Test marked as failed in report but passing in agent
-        let mut c6_hits: Vec<String> = Vec::new();
-        for test_name in fail_to_pass_tests.iter().chain(pass_to_pass_tests.iter()) {
-            let report_status = report_s.get(test_name).map(String::as_str).unwrap_or("missing");
-            let agent_status = agent_s.get(test_name).map(String::as_str).unwrap_or("missing");
             
-            if report_status == "failed" && agent_status == "passed" {
-                c6_hits.push(format!("{} (marked as failed in report.json but passing in agent log)", test_name));
+            // If P2P is missing in base, check it in before
+            if b == "missing" {
+                // If P2P is NOT passing in before (missing or failed), it's a violation
+                if be != "passed" {
+                    c4_hits.push(format!("{t} (missing in base, {be} in before)"));
+                }
             }
         }
+        let c4 = !c4_hits.is_empty();
+        println!("C4 check: {} violations", c4_hits.len());
 
-        // C7: F2P tests in golden source diff (simplified for now)
-        let c7_hits: Vec<String> = Vec::new(); // TODO: Implement diff analysis
+        // C5: true duplicates per log using enhanced detection
+        let mut dup_map = HashMap::new();
+        let base_txt = fs::read_to_string(base_path).unwrap_or_default();
+        let before_txt = fs::read_to_string(before_path).unwrap_or_default();
+        let after_txt = fs::read_to_string(after_path).unwrap_or_default();
+        
+        let base_dups = detect_same_file_duplicates(&base_txt);
+        let before_dups = detect_same_file_duplicates(&before_txt);
+        let after_dups = detect_same_file_duplicates(&after_txt);
+        
+        if !base_dups.is_empty() {
+            dup_map.insert("base".to_string(), base_dups.into_iter().take(50).collect::<Vec<_>>());
+        }
+        if !before_dups.is_empty() {
+            dup_map.insert("before".to_string(), before_dups.into_iter().take(50).collect::<Vec<_>>());
+        }
+        if !after_dups.is_empty() {
+            dup_map.insert("after".to_string(), after_dups.into_iter().take(50).collect::<Vec<_>>());
+        }
+        let c5 = !dup_map.is_empty();
+        println!("C5 check: {} logs with duplicates", dup_map.len());
 
-        RuleViolations {
+        // C6: Test marked as failing in report.json but passing in post_agent_log
+        // This checks for inconsistencies between report.json and agent log results
+        let mut c6_hits: Vec<String> = vec![];
+        let c6 = match report_data {
+            Some(report_data_ref) => {
+                println!("Performing C6 check: comparing report.json with agent log results");
+                
+                // Parse report.json to extract test results
+                let mut report_failed_tests = std::collections::HashSet::new();
+                
+                // Try different possible structures for report.json
+                if let Some(results_array) = report_data_ref.get("results").and_then(|r| r.as_array()) {
+                    for result in results_array {
+                        if let (Some(test_name), Some(status)) = (result.get("test_name").and_then(|t| t.as_str()), result.get("status").and_then(|s| s.as_str())) {
+                            if status.to_lowercase() == "failed" || status.to_lowercase() == "fail" {
+                                report_failed_tests.insert(test_name.to_string());
+                            }
+                        }
+                    }
+                } else if let Some(test_results) = report_data_ref.get("test_results").and_then(|r| r.as_array()) {
+                    for result in test_results {
+                        if let (Some(test_name), Some(status)) = (result.get("test_name").and_then(|t| t.as_str()), result.get("status").and_then(|s| s.as_str())) {
+                            if status.to_lowercase() == "failed" || status.to_lowercase() == "fail" {
+                                report_failed_tests.insert(test_name.to_string());
+                            }
+                        }
+                    }
+                } else if let Some(tests_obj) = report_data_ref.get("tests").and_then(|t| t.as_object()) {
+                    // Format: {"tests": {"test_name": {"status": "failed"}}}
+                    for (test_name, test_data) in tests_obj {
+                        if let Some(status) = test_data.get("status").and_then(|s| s.as_str()) {
+                            if status.to_lowercase() == "failed" || status.to_lowercase() == "fail" {
+                                report_failed_tests.insert(test_name.clone());
+                            }
+                        }
+                    }
+                } else if let Some(obj) = report_data_ref.as_object() {
+                    // Check for SWE-bench format first
+                    let mut found_swe_format = false;
+                    for (key, value) in obj {
+                        if let Some(tests_status) = value.get("tests_status").and_then(|t| t.as_object()) {
+                            println!("Found SWE-bench format report.json for key: {}", key);
+                            found_swe_format = true;
+                            
+                            // Parse all test categories that indicate failure
+                            for (category, category_data) in tests_status {
+                                if let Some(category_obj) = category_data.as_object() {
+                                    // Extract failed tests from "failure" arrays in all categories
+                                    if let Some(failure_array) = category_obj.get("failure").and_then(|f| f.as_array()) {
+                                        for test_item in failure_array {
+                                            if let Some(test_name) = test_item.as_str() {
+                                                report_failed_tests.insert(test_name.to_string());
+                                                println!("Found failed test in category {}: {}", category, test_name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break; // Found SWE-bench format, no need to check other keys
+                        }
+                    }
+                    
+                    // If not SWE-bench format, try direct mapping format: {"test_name": "status"}
+                    if !found_swe_format {
+                        for (test_name, status_val) in obj {
+                            if let Some(status) = status_val.as_str() {
+                                if status.to_lowercase() == "failed" || status.to_lowercase() == "fail" {
+                                    report_failed_tests.insert(test_name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                println!("Found {} failed tests in report.json", report_failed_tests.len());
+                
+                // Check F2P and P2P tests for inconsistencies in both directions
+                let mut inconsistencies = 0;
+                for test_name in fail_to_pass_tests.iter().chain(pass_to_pass_tests.iter()) {
+                    let report_status = if report_failed_tests.contains(test_name) {
+                        "failed"
+                    } else if report_s.get(test_name) == Some(&"passed".to_string()) {
+                        "passed"
+                    } else {
+                        continue; // Skip tests that are missing in report.json
+                    };
+                    
+                    let agent_status = agent_s.get(test_name).map(String::as_str).unwrap_or("missing");
+                    
+                    // Check for status mismatches (excluding missing cases)
+                    if agent_status != "missing" && report_status != agent_status {
+                        match (report_status, agent_status) {
+                            ("failed", "passed") => {
+                                c6_hits.push(format!("{} (marked as failed in report.json but passing in agent log)", test_name));
+                                inconsistencies += 1;
+                            },
+                            ("passed", "failed") => {
+                                c6_hits.push(format!("{} (marked as passed in report.json but failing in agent log)", test_name));
+                                inconsistencies += 1;
+                            },
+                            _ => {} // Other combinations like "passed" vs "ignored" could be added if needed
+                        }
+                    }
+                }
+                
+                println!("C6 check found {} inconsistencies", inconsistencies);
+                inconsistencies > 0
+            },
+            None => {
+                println!("C6 check skipped: no report.json available");
+                false
+            }
+        };
+        println!("C6 check: {} violations", c6_hits.len());
+
+        // C7: F2P tests found in golden source diff files but not in test diff files
+        let mut c7_hits: Vec<String> = vec![];
+        let c7 = {
+            println!("Performing C7 check: looking for F2P tests in golden source diff files (but not in test diffs)");
+            
+            // Find diff/patch files from patches folder
+            let diff_files: Vec<&String> = file_paths.iter()
+                .filter(|path| {
+                    let path_lower = path.to_lowercase();
+                    path_lower.contains("patches/") && (path_lower.ends_with(".diff") || path_lower.ends_with(".patch"))
+                })
+                .collect();
+            
+            println!("Found {} diff/patch files", diff_files.len());
+            
+            if !diff_files.is_empty() {
+                // Separate golden source diffs from test diffs
+                let (golden_source_diffs, test_diffs): (Vec<&String>, Vec<&String>) = diff_files.iter()
+                    .partition(|path| {
+                        let filename = path.split('/').last().unwrap_or("").to_lowercase();
+                        // Golden source diffs typically contain "gold", "golden", "src", "source"
+                        // Test diffs typically contain "test"
+                        (filename.contains("gold") || filename.contains("src") || filename.contains("source")) &&
+                        !filename.contains("test")
+                    });
+                
+                println!("Found {} golden source diff files and {} test diff files", 
+                         golden_source_diffs.len(), test_diffs.len());
+                
+                // Read all test diff contents to check if tests appear there
+                let mut test_diff_contents = String::new();
+                for test_diff in &test_diffs {
+                    if let Ok(content) = fs::read_to_string(test_diff) {
+                        test_diff_contents.push_str(&content);
+                        test_diff_contents.push('\n');
+                        println!("Read test diff file: {}", test_diff);
+                    }
+                }
+                
+                // Check golden source diffs for F2P tests
+                for golden_diff in &golden_source_diffs {
+                    println!("Checking golden source diff file: {}", golden_diff);
+                    
+                    if let Ok(diff_content) = fs::read_to_string(golden_diff) {
+                        println!("Read golden source diff successfully, {} bytes", diff_content.len());
+                        
+                        // Check if any F2P test names appear in this golden source diff
+                        for f2p_test in fail_to_pass_tests {
+                            // Extract the actual test name from module path (e.g., "tests::test_example" -> "test_example")
+                            let test_name_to_search = if f2p_test.contains("::") {
+                                f2p_test.split("::").last().unwrap_or(f2p_test)
+                            } else {
+                                f2p_test
+                            };
+                            
+                            if diff_content.contains(test_name_to_search) {
+                                // Check if this test also appears in test diffs
+                                if !test_diff_contents.is_empty() && test_diff_contents.contains(test_name_to_search) {
+                                    println!("F2P test '{}' found in both golden source and test diffs - not a violation", f2p_test);
+                                } else {
+                                    let violation = format!("{} (found as '{}' in {} but not in test diffs)", 
+                                                          f2p_test, test_name_to_search, 
+                                                          golden_diff.split('/').last().unwrap_or(golden_diff));
+                                    c7_hits.push(violation);
+                                    println!("C7 violation: F2P test '{}' found as '{}' in golden source diff '{}' but not in test diffs", 
+                                             f2p_test, test_name_to_search, golden_diff);
+                                }
+                            }
+                        }
+                    } else {
+                        println!("Failed to read golden source diff file: {}", golden_diff);
+                    }
+                }
+            } else {
+                println!("No diff/patch files found in patches folder");
+            }
+            
+            let has_violations = !c7_hits.is_empty();
+            println!("C7 check completed: {} violations found", c7_hits.len());
+            has_violations
+        };
+        println!("C7 check: {} violations", c7_hits.len());
+
+        let rule_violations = RuleViolations {
             c1_failed_in_base_present_in_p2p: RuleViolation {
-                has_problem: !c1_hits.is_empty(),
+                has_problem: c1,
                 examples: c1_hits,
             },
             c2_failed_in_after_present_in_f2p_or_p2p: RuleViolation {
-                has_problem: !c2_hits.is_empty(),
+                has_problem: c2,
                 examples: c2_hits,
             },
             c3_f2p_success_in_before: RuleViolation {
-                has_problem: !c3_hits.is_empty(),
+                has_problem: c3,
                 examples: c3_hits,
             },
             c4_p2p_missing_in_base_and_not_passing_in_before: RuleViolation {
-                has_problem: !c4_hits.is_empty(),
+                has_problem: c4,
                 examples: c4_hits,
             },
             c5_duplicates_in_same_log: RuleViolation {
-                has_problem: !c5_hits.is_empty(),
-                examples: c5_hits,
+                has_problem: c5,
+                examples: vec![], 
             },
             c6_test_marked_failed_in_report_but_passing_in_agent: RuleViolation {
-                has_problem: !c6_hits.is_empty(),
+                has_problem: c6,
                 examples: c6_hits,
             },
             c7_f2p_tests_in_golden_source_diff: RuleViolation {
-                has_problem: !c7_hits.is_empty(),
+                has_problem: c7,
                 examples: c7_hits,
             },
-        }
+        };
+
+        (rule_violations, dup_map)
     }
 }
 
-// Rust-specific log parser is now in rust_log_parser.rs
+// ---------------- Duplicate detection (C5) parity----------------
+fn detect_file_boundary(line: &str) -> Option<String> {
+    // These patterns are now in RustLogParser, but for duplicate detection we need them here
+    lazy_static! {
+        static ref FILE_BOUNDARY_RE_1: Regex = Regex::new(r"(?i)Running\s+([^\s]+(?:/[^\s]+)*\.(?:rs|fixed))\s*\(").unwrap();
+        static ref FILE_BOUNDARY_RE_2: Regex = Regex::new(r"(?i)===\s*Running\s+(.+\.(?:rs|fixed))").unwrap();
+        static ref FILE_BOUNDARY_RE_3: Regex = Regex::new(r"(?i)test\s+result:\s+ok\.\s+\d+\s+passed.*for\s+(.+\.(?:rs|fixed))").unwrap();
+    }
+    
+    if let Some(c) = FILE_BOUNDARY_RE_1.captures(line) {
+        return Some(c.get(1).unwrap().as_str().to_string());
+    }
+    if let Some(c) = FILE_BOUNDARY_RE_2.captures(line) {
+        return Some(c.get(1).unwrap().as_str().to_string());
+    }
+    if let Some(c) = FILE_BOUNDARY_RE_3.captures(line) {
+        return Some(c.get(1).unwrap().as_str().to_string());
+    }
+    None
+}
+
+fn extract_test_info_enhanced(line: &str) -> Option<(String, String)> {
+    lazy_static! {
+        static ref ENH_TEST_RE_1: Regex = Regex::new(r"(?i)\btest\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
+        static ref ENH_TEST_RE_2: Regex = Regex::new(r"(?i)test\s+([^\s]+)\s+\.\.\.\s+(ok|FAILED|ignored|error)").unwrap();
+        static ref UI_TEST_PATH_RE: Regex = Regex::new(r"(?i)^([^\s]+(?:/[^\s]+)*\.(?:rs|fixed|toml|txt|md)(?:\s+\(revision\s+[^)]+\))?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s*$").unwrap();
+        static ref UI_TEST_PATH_SIMPLE_RE: Regex = Regex::new(r"(?i)^([^\s]+(?:/[^\s]+)*\.(?:rs|fixed|toml|txt|md)(?:\s+\(revision\s+[^)]+\))?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s*$").unwrap();
+    }
+    
+    if let Some(c) = ENH_TEST_RE_1.captures(line) {
+        return Some((
+            c.get(1).unwrap().as_str().trim().to_string(),
+            c.get(2).unwrap().as_str().trim().to_string(),
+        ));
+    }
+    if let Some(c) = ENH_TEST_RE_2.captures(line) {
+        return Some((
+            c.get(1).unwrap().as_str().trim().to_string(),
+            c.get(2).unwrap().as_str().trim().to_string(),
+        ));
+    }
+    
+    // Check for UI test format patterns
+    if let Some(c) = UI_TEST_PATH_RE.captures(line) {
+        return Some((
+            c.get(1).unwrap().as_str().trim().to_string(),
+            c.get(2).unwrap().as_str().trim().to_string(),
+        ));
+    }
+    if let Some(c) = UI_TEST_PATH_SIMPLE_RE.captures(line) {
+        return Some((
+            c.get(1).unwrap().as_str().trim().to_string(),
+            c.get(2).unwrap().as_str().trim().to_string(),
+        ));
+    }
+    
+    None
+}
+
+#[derive(Clone)]
+struct Occur {
+    test_name: String,
+    status: String,
+    line_no: usize,
+    context_before: Vec<String>,
+    context_after: Vec<String>,
+}
+
+fn is_true_duplicate(occ: &[Occur]) -> bool {
+    if occ.len() <= 1 { return false; }
+    let mut lines: Vec<usize> = occ.iter().map(|o| o.line_no).collect();
+    lines.sort_unstable();
+    let mut min_dist = usize::MAX;
+    for i in 1..lines.len() {
+        min_dist = std::cmp::min(min_dist, lines[i] - lines[i-1]);
+    }
+    if min_dist < 10 { return true; }
+    let mut has_fail = false;
+    let mut has_ok = false;
+    for o in occ {
+        let s = o.status.to_lowercase();
+        if s == "failed" || s == "error" { has_fail = true; }
+        if s == "ok" { has_ok = true; }
+    }
+    if has_fail && has_ok { return true; }
+    let contexts: Vec<String> = occ.iter().map(|o| {
+        let mut c = String::new();
+        c.push_str(&o.context_before.join(" "));
+        c.push_str(&o.context_after.join(" "));
+        c.trim().to_string()
+    }).collect();
+    if !contexts.is_empty() && contexts.iter().all(|c| !c.is_empty() && *c == contexts[0]) {
+        return true;
+    }
+    false
+}
+
+fn detect_same_file_duplicates(raw_content: &str) -> Vec<String> {
+    if raw_content.is_empty() { return vec![]; }
+    let lines: Vec<&str> = raw_content.split('\n').collect();
+    let mut current_file = "unknown".to_string();
+    let mut per_file: HashMap<String, Vec<Occur>> = HashMap::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(f) = detect_file_boundary(line) {
+            current_file = f;
+            continue;
+        }
+        if let Some((name, status)) = extract_test_info_enhanced(line) {
+            let before = if i >= 2 { lines[i-2..i].iter().map(|s| s.to_string()).collect() } else { vec![] };
+            let after = if i+1 < lines.len() { lines[i+1..std::cmp::min(lines.len(), i+3)].iter().map(|s| s.to_string()).collect() } else { vec![] };
+            per_file.entry(current_file.clone()).or_default().push(Occur{ test_name: name, status, line_no: i, context_before: before, context_after: after });
+        }
+    }
+
+    let mut out = vec![];
+    let mut by_name: HashMap<String, Vec<Occur>> = HashMap::new();
+    for (file, occs) in per_file {
+        for o in occs { by_name.entry(o.test_name.clone()).or_default().push(o); }
+    }
+    for (name, list) in by_name {
+        if list.len() > 1 && is_true_duplicate(&list) {
+            let places: Vec<String> = list.iter().map(|o| format!("line {}", o.line_no)).collect();
+            out.push(format!("{} (appears {} times: {})", name, places.len(), places.join(", ")));
+        }
+    }
+    out
+}
 
 #[cfg(test)]
 mod tests {

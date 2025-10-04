@@ -5,6 +5,8 @@ use leptos_router::{
     StaticSegment,
 };
 
+use crate::app::types::ProcessingResult;
+
 pub mod types;
 pub mod processing;
 pub mod file_operations;
@@ -15,7 +17,7 @@ pub mod test_checker;
 pub mod log_search_results;
 pub mod deliverable_checker_interface;
 pub mod deliverable_checker;
-use deliverable_checker::DeliverableCheckerPage;
+use deliverable_checker::{DeliverableCheckerPage, DeliverableCheckerPageProps};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -59,17 +61,92 @@ pub fn App() -> impl IntoView {
 
 #[component]
 pub fn MainApp() -> impl IntoView {
+    let current_deliverable = RwSignal::new(None::<ProcessingResult>);
+
     view! {
         <div class="min-h-screen bg-gray-50 h-screen">
             // Header
             <div class="bg-white shadow-sm border-b border-gray-200">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="flex justify-between items-center h-16">
                         <div class="flex items-center">
                             <h1 class="text-xl font-semibold text-gray-900">
                                 "SWE Reviewer"
                             </h1>
                         </div>
+                        <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
+                        <span class="text-xl font-black text-gray-700">
+                            {move || current_deliverable.get().map_or(String::new(), |d| format!("[{}]", d.instance_id.clone())) }
+                        </span>
+                        </Show>
+                        <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
+                            <div class="flex items-center space-x-2">
+                                <a 
+                                    href=move || current_deliverable.get().map_or(String::new(), |d| d.deliverable_link.clone())
+                                    target="_blank"
+                                    class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                >
+                                    "Deliverable"
+                                </a>
+                                <Show when=move || {
+                                    if let Some(d) = current_deliverable.get() {
+                                        !d.task_id.is_empty()
+                                    } else { false }
+                                }>
+                                    <a 
+                                        href=move || {
+                                            if let Some(d) = current_deliverable.get() {
+                                                if let Some(id) = d.task_id.split('#').last() {
+                                                    format!("https://github.com/swe-bench/SWE-bench/issues/{}", id)
+                                                } else { String::new() }
+                                            } else { String::new() }
+                                        }
+                                        target="_blank"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        {move || {
+                                            if let Some(d) = current_deliverable.get() {
+                                                if let Some(id) = d.task_id.split('#').last() {
+                                                    format!("Issue #{}", id)
+                                                } else { String::new() }
+                                            } else { String::new() }
+                                        }}
+                                    </a>
+                                </Show>
+                                <Show when=move || {
+                                    if let Some(d) = current_deliverable.get() {
+                                        !d.instance_id.is_empty()
+                                    } else { false }
+                                }>
+                                    <a 
+                                        href=move || {
+                                            if let Some(d) = current_deliverable.get() {
+                                                if let Some(id) = d.instance_id.split('-').last() {
+                                                    format!("https://github.com/swe-bench/SWE-bench/pull/{}", id)
+                                                } else { String::new() }
+                                            } else { String::new() }
+                                        }
+                                        target="_blank"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        {move || {
+                                            if let Some(d) = current_deliverable.get() {
+                                                if let Some(id) = d.instance_id.split('-').last() {
+                                                    format!("PR #{}", id)
+                                                } else { String::new() }
+                                            } else { String::new() }
+                                        }}
+                                    </a>
+                                    <a 
+                                        href=move || current_deliverable.get().map_or(String::new(), |d| format!("https://swe-bench-plus.turing.com/instances/{}", d.instance_id))
+                                        target="_blank"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        "SWE URL"
+                                    </a>
+                                </Show>
+                            </div>
+                        </Show>
                     </div>
                 </div>
             </div>
@@ -77,7 +154,7 @@ pub fn MainApp() -> impl IntoView {
             // Main content
             <div class="w-full bg-white dark:bg-gray-800" style="height: calc(100vh - 65px);">
                 <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=DeliverableCheckerPage/>
+                    <Route path=StaticSegment("") view=move || DeliverableCheckerPage(DeliverableCheckerPageProps { current_deliverable: current_deliverable.clone() }) />
                 </Routes>
             </div>
         </div>

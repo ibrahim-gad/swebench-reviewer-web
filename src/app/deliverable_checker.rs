@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use leptos::prelude::Effect;
 use std::collections::HashMap;
 use crate::components::language_selector::{ProgrammingLanguage, LanguageSelector};
 
@@ -13,7 +14,7 @@ use super::deliverable_checker_interface::ReportCheckerInterface;
 use leptos::task::spawn_local;
 
 #[component]
-pub fn DeliverableCheckerPage() -> impl IntoView {
+pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingResult>>) -> impl IntoView {
     let deliverable_link = RwSignal::new(String::new());
     let selected_language = RwSignal::new(ProgrammingLanguage::default());
     let is_processing = RwSignal::new(false);
@@ -145,7 +146,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
     };
 
     // Helper functions for the enhanced functionality
-    let load_file_contents_fn = move || {
+    let _load_file_contents_fn = move || {
         load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
     };
     
@@ -209,6 +210,41 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
         log_analysis_result.set(None);
         log_analysis_loading.set(false);
     };
+
+    Effect::new(move |_| {
+        if let Some(_) = result.get() {
+            if !loading_files.get() && file_contents.get().main_json.is_none() {
+                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
+            }
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(r) = result.get() {
+            current_deliverable.set(Some(r.clone()));
+        } else {
+            current_deliverable.set(None);
+        }
+    });
+
+    Effect::new(move |_| {
+        if let Some(mut r) = result.get().clone() {
+            if r.instance_id.is_empty() && file_contents.get().main_json.is_some() {
+                if let Some(main_json) = &file_contents.get().main_json {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&main_json.content) {
+                        let instance_id = json.get("instance_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        let task_id = json.get("task_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        
+                        r.instance_id = instance_id;
+                        r.task_id = task_id;
+                        
+                        // Update result with new values
+                        result.set(Some(r));
+                    }
+                }
+            }
+        }
+    });
 
 
     view! {

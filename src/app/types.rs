@@ -27,6 +27,9 @@ pub struct ProcessingResult {
     pub issues_found: usize,
     pub score: usize,
     pub file_paths: Vec<String>,
+    pub deliverable_link: String,
+    pub instance_id: String,
+    pub task_id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -181,4 +184,11 @@ impl LoadedFileTypes {
             _ => {},
         }
     }
+}
+
+#[derive(Clone)]
+pub struct DeliverableInfo {
+    pub deliverable_link: String,
+    pub instance_id: String,
+    pub task_id: String,
 }

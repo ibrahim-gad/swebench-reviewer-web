@@ -6,6 +6,7 @@ use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
 use super::file_viewer::FileViewer;
 use crate::components::language_selector::ProgrammingLanguage;
 use super::types::LoadedFileTypes;
+use super::test_checker::RuleViolationInfo;
 
 #[component]
 pub fn ReportCheckerInterface(
@@ -29,10 +30,114 @@ pub fn ReportCheckerInterface(
     log_analysis_loading: RwSignal<bool>,
     loaded_file_types: RwSignal<LoadedFileTypes>,
     result: RwSignal<Option<super::types::ProcessingResult>>,
+    #[prop(optional)] selected_violations: RwSignal<Vec<super::test_checker::RuleViolationInfo>>,
 ) -> impl IntoView {
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let input_tab_active = move || active_main_tab.get() == "input";
 
+    // Use RwSignal::new instead of deprecated create_rw_signal
+    let selected_violations = RwSignal::new(Vec::<super::test_checker::RuleViolationInfo>::new());
+
+    // Helper function to get violations for selected test - fix string comparisons
+    let get_selected_test_violations = move || -> Vec<RuleViolationInfo> {
+        let analysis = log_analysis_result.get();
+        if let Some(analysis) = analysis {
+            let selected_test_name = if current_selection.get() == "fail_to_pass" {
+                let f2p_tests = fail_to_pass_tests.get();
+                let index = selected_fail_to_pass_index.get();
+                if index < f2p_tests.len() {
+                    Some(f2p_tests[index].clone())
+                } else {
+                    None
+                }
+            } else {
+                let p2p_tests = pass_to_pass_tests.get();
+                let index = selected_pass_to_pass_index.get();
+                if index < p2p_tests.len() {
+                    Some(p2p_tests[index].clone())
+                } else {
+                    None
+                }
+            };
+            
+            if let Some(test_name) = selected_test_name {
+                let test_type = if current_selection.get() == "fail_to_pass" { "fail_to_pass" } else { "pass_to_pass" };
+                
+                let mut violated_rules = Vec::new();
+                let rule_checks = &analysis.rule_violations;
+                
+                if test_type == "pass_to_pass" && rule_checks.c1_failed_in_base_present_in_p2p.has_problem {
+                    if rule_checks.c1_failed_in_base_present_in_p2p.examples.iter().any(|example| *example == test_name) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c1_failed_in_base_present_in_p2p".to_string(),
+                            description: "Pass-to-pass tests that failed in base but are present in P2P".to_string(),
+                            examples: rule_checks.c1_failed_in_base_present_in_p2p.examples.clone(),
+                        });
+                    }
+                }
+                
+                if rule_checks.c2_failed_in_after_present_in_f2p_or_p2p.has_problem {
+                    if rule_checks.c2_failed_in_after_present_in_f2p_or_p2p.examples.iter().any(|example| *example == test_name) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c2_failed_in_after_present_in_f2p_or_p2p".to_string(),
+                            description: "Tests that failed in after but are present in F2P or P2P".to_string(),
+                            examples: rule_checks.c2_failed_in_after_present_in_f2p_or_p2p.examples.clone(),
+                        });
+                    }
+                }
+                
+                if test_type == "fail_to_pass" && rule_checks.c3_f2p_success_in_before.has_problem {
+                    if rule_checks.c3_f2p_success_in_before.examples.iter().any(|example| *example == test_name) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c3_f2p_success_in_before".to_string(),
+                            description: "Fail-to-pass tests that succeeded in before".to_string(),
+                            examples: rule_checks.c3_f2p_success_in_before.examples.clone(),
+                        });
+                    }
+                }
+                
+                if test_type == "pass_to_pass" && rule_checks.c4_p2p_missing_in_base_and_not_passing_in_before.has_problem {
+                    if rule_checks.c4_p2p_missing_in_base_and_not_passing_in_before.examples.iter().any(|example| example.contains(&test_name)) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c4_p2p_missing_in_base_and_not_passing_in_before".to_string(),
+                            description: "Pass-to-pass tests missing in base and not passing in before".to_string(),
+                            examples: rule_checks.c4_p2p_missing_in_base_and_not_passing_in_before.examples.clone(),
+                        });
+                    }
+                }
+                
+                if rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.has_problem {
+                    if rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.examples.iter().any(|example| {
+                        let clean_example = example.split(" (").next().unwrap_or(example);
+                        *clean_example == test_name
+                    }) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c6_test_marked_failed_in_report_but_passing_in_agent".to_string(),
+                            description: "Tests marked as failed in report but passing in agent log".to_string(),
+                            examples: rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.examples.clone(),
+                        });
+                    }
+                }
+                
+                if test_type == "fail_to_pass" && rule_checks.c7_f2p_tests_in_golden_source_diff.has_problem {
+                    if rule_checks.c7_f2p_tests_in_golden_source_diff.examples.iter().any(|example| example.contains(&test_name)) {
+                        violated_rules.push(RuleViolationInfo {
+                            rule_name: "c7_f2p_tests_in_golden_source_diff".to_string(),
+                            description: "Fail-to-pass tests present in golden source diff".to_string(),
+                            examples: rule_checks.c7_f2p_tests_in_golden_source_diff.examples.clone(),
+                        });
+                    }
+                }
+                
+                violated_rules
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    };
+    
     view! {
         <div class="flex flex-col h-full overflow-hidden">
             <div class="flex-none bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1 shadow-sm mb-1">
@@ -132,12 +237,58 @@ pub fn ReportCheckerInterface(
                                 <button
                                     class="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                                     title="Copy test name"
+                                    on:click=move |_| {
+                                        let test_name = if current_selection.get() == "fail_to_pass" {
+                                            let f2p_tests = fail_to_pass_tests.get();
+                                            let index = selected_fail_to_pass_index.get();
+                                            if index < f2p_tests.len() {
+                                                Some(f2p_tests[index].clone())
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            let p2p_tests = pass_to_pass_tests.get();
+                                            let index = selected_pass_to_pass_index.get();
+                                            if index < p2p_tests.len() {
+                                                Some(p2p_tests[index].clone())
+                                            } else {
+                                                None
+                                            }
+                                        };
+                                        
+                                        if let Some(name) = test_name {
+                                            leptos::logging::log!("Copying test name: {}", name);
+                                            // TODO: Implement actual copy to clipboard
+                                        }
+                                    }
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
                                 </button>
                             </div>
+                            
+                            // Fixed violation display with consistent View type structure
+                            {move || {
+                                let violations = get_selected_test_violations();
+                                if !violations.is_empty() {
+                                    view! {
+                                        <div class="ml-2 space-y-0 max-h-24 overflow-y-hidden">
+                                            {violations.into_iter().map(|rule| view! {
+                                                <div class="p-0 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
+                                                    <div class="text-red-700 dark:text-red-300">{rule.description}</div>
+                                                </div>
+                                            }).collect_view()}
+                                        </div>
+                                    }
+                                } else {
+                                    view! {
+                                        <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
+                                            <div></div>
+                                        </div>
+                                    }
+                                }
+                            }}
                         </div>
                     </Show>
                 </div>

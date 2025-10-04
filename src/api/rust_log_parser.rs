@@ -40,6 +40,11 @@ lazy_static! {
     static ref CORRUPTED_TEST_LINE_RE: Regex = Regex::new(r"(?i)(?:line)?test\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*")
         .expect("Failed to compile CORRUPTED_TEST_LINE_RE regex");
 
+    // File boundary hints
+    static ref FILE_BOUNDARY_RE_1: Regex = Regex::new(r"(?i)Running\s+([^\s]+(?:/[^\s]+)*\.(?:rs|fixed))\s*\(").unwrap();
+    static ref FILE_BOUNDARY_RE_2: Regex = Regex::new(r"(?i)===\s*Running\s+(.+\.(?:rs|fixed))").unwrap();
+    static ref FILE_BOUNDARY_RE_3: Regex = Regex::new(r"(?i)test\s+result:\s+ok\.\s+\d+\s+passed.*for\s+(.+\.(?:rs|fixed))").unwrap();
+
     // Enhanced extraction patterns
     static ref ENH_TEST_RE_1: Regex = Regex::new(r"(?i)\btest\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
     static ref ENH_TEST_RE_2: Regex = Regex::new(r"(?i)test\s+([^\s]+)\s+\.\.\.\s+(ok|FAILED|ignored|error)").unwrap();
