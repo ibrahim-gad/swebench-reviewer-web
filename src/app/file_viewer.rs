@@ -1,11 +1,15 @@
 use leptos::prelude::*;
-use super::types::FileContents;
+use leptos::prelude::Effect;
+use super::types::{FileContents, LoadedFileTypes};
+use super::file_operations::load_file_contents;
 
 #[component]
 pub fn FileViewer(
     active_tab: RwSignal<String>,
     file_contents: RwSignal<FileContents>,
     loading_files: RwSignal<bool>,
+    loaded_file_types: RwSignal<LoadedFileTypes>,
+    result: RwSignal<Option<super::types::ProcessingResult>>,
 ) -> impl IntoView {
     let input_tabs = vec![
         ("base", "Base"),
@@ -15,6 +19,20 @@ pub fn FileViewer(
         ("main_json", "Main JSON"),
         ("report", "Report JSON"),
     ];
+
+    // Effect to trigger loading when tab changes to an unloaded one
+    Effect::new(move |_| {
+        let current_tab = active_tab.get();
+        let contents = file_contents.get();
+        let loaded = loaded_file_types.get();
+        
+        if contents.get(&current_tab).is_none() && !loaded.is_loaded(&current_tab) {
+            if let Some(_) = result.get() {
+                // Trigger the load function
+                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
+            }
+        }
+    });
 
     view! {
         <div class="flex h-full">
@@ -57,9 +75,6 @@ pub fn FileViewer(
                                 let file_type = file_content.file_type.clone();
                                 view! {
                                     <>
-                                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 capitalize">
-                                            {active_tab_value.replace('_', " ")} Content
-                                        </h3>
                                         <div class="flex-1 min-h-0 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-900 text-gray-100">
                                             <pre class=move || {
                                                 if file_type == "json" {

@@ -19,9 +19,9 @@ pub fn TestChecker(
     log_analysis_result: RwSignal<Option<LogAnalysisResult>>,
     _log_analysis_loading: RwSignal<bool>,
 ) -> impl IntoView {
-    // Helper function to get test status from analysis result for a specific stage
-    let get_test_status_for_stage = move |test_name: &str, test_type: &str, stage: &str| -> Option<TestStatus> {
-        if let Some(analysis) = log_analysis_result.get() {
+    // Helper function to get test status from analysis result for a specific stage - fixed to take analysis as parameter
+    let get_test_status_for_stage = move |test_name: &str, test_type: &str, stage: &str, analysis: &Option<LogAnalysisResult>| -> Option<TestStatus> {
+        if let Some(analysis) = analysis {
             let stage_test_name = format!("{}_{}", test_name, stage);
             analysis.test_statuses.iter()
                 .find(|status| status.test_name == stage_test_name && status.r#type == test_type)
@@ -31,21 +31,21 @@ pub fn TestChecker(
         }
     };
 
-    // Helper function to get all stage statuses for a test
-    let get_all_stage_statuses = move |test_name: &str, test_type: &str| -> HashMap<String, Option<TestStatus>> {
+    // Helper function to get all stage statuses for a test - fixed to take analysis as parameter
+    let get_all_stage_statuses = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> HashMap<String, Option<TestStatus>> {
         let mut statuses = HashMap::new();
         let stages = ["base", "before", "after", "agent", "report"];
         
         for stage in &stages {
-            statuses.insert(stage.to_string(), get_test_status_for_stage(test_name, test_type, stage));
+            statuses.insert(stage.to_string(), get_test_status_for_stage(test_name, test_type, stage, analysis));
         }
         
         statuses
     };
 
-    // Helper function to check if test has rule violations
-    let has_rule_violations = move |test_name: &str, test_type: &str| -> bool {
-        if let Some(analysis) = log_analysis_result.get() {
+    // Helper function to check if test has rule violations - fixed to take analysis as parameter
+    let has_rule_violations = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> bool {
+        if let Some(analysis) = analysis {
             let rule_checks = &analysis.rule_violations;
             
             // Check if test appears in any rule violation examples
@@ -93,7 +93,85 @@ pub fn TestChecker(
         }
     };
 
-    // Helper function to render status icon
+    // Memoized status computation for all fail_to_pass tests - using Memo::new with proper closure capture
+    let fail_to_pass_statuses = Memo::new({
+        let get_all_stage_statuses = get_all_stage_statuses.clone();
+        let has_rule_violations = has_rule_violations.clone();
+        let fail_to_pass_tests = fail_to_pass_tests.clone();
+        move |_| {
+            let analysis = log_analysis_result.get();
+            let mut statuses = HashMap::new();
+            for test_name in &fail_to_pass_tests.get() {
+                let stage_statuses = get_all_stage_statuses(test_name, "fail_to_pass", &analysis);
+                let has_violations = has_rule_violations(test_name, "fail_to_pass", &analysis);
+                
+                let base_status = stage_statuses.get("base")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                let before_status = stage_statuses.get("before")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                let after_status = stage_statuses.get("after")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                statuses.insert(
+                    test_name.clone(),
+                    (base_status, before_status, after_status, has_violations)
+                );
+            }
+            statuses
+        }
+    });
+
+    // Memoized status computation for all pass_to_pass tests - using Memo::new with proper closure capture
+    let pass_to_pass_statuses = Memo::new({
+        let get_all_stage_statuses = get_all_stage_statuses.clone();
+        let has_rule_violations = has_rule_violations.clone();
+        let pass_to_pass_tests = pass_to_pass_tests.clone();
+        move |_| {
+            let analysis = log_analysis_result.get();
+            let mut statuses = HashMap::new();
+            for test_name in &pass_to_pass_tests.get() {
+                let stage_statuses = get_all_stage_statuses(test_name, "pass_to_pass", &analysis);
+                let has_violations = has_rule_violations(test_name, "pass_to_pass", &analysis);
+                
+                let base_status = stage_statuses.get("base")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                let before_status = stage_statuses.get("before")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                let after_status = stage_statuses.get("after")
+                    .and_then(|s| s.as_ref())
+                    .map(|s| s.status.as_str())
+                    .unwrap_or("missing")
+                    .to_string();
+                
+                statuses.insert(
+                    test_name.clone(),
+                    (base_status, before_status, after_status, has_violations)
+                );
+            }
+            statuses
+        }
+    });
+
+    // Helper function to render status icon - unchanged
     let render_status_icon = move |status: &str| {
         match status {
             "passed" => view! {
@@ -117,7 +195,7 @@ pub fn TestChecker(
             "missing" => view! {
                 <div class="w-4 h-4 flex items-center justify-center bg-yellow-100 dark:bg-yellow-900/50 rounded-full">
                     <img 
-                        src="https://img.icons8.com/?id=6645&format=png&size=16" 
+                        src="https://img.icons8.com/?id=Kc1iMzD0T01B&format=png&size=16" 
                         alt="Ignored" 
                         class="w-3 h-3"
                     />
@@ -129,42 +207,38 @@ pub fn TestChecker(
         }
     };
 
-    // Helper function to render status row for both Rust and non-Rust languages
+    // Refactored helper function to render status row using precomputed statuses - unchanged
     let render_status_row = move |test_name: String, test_type: &str| {
         if selected_language.get() == ProgrammingLanguage::Rust {
-            let stage_statuses = get_all_stage_statuses(&test_name, test_type);
-            let has_violations = has_rule_violations(&test_name, test_type);
+            let statuses_map = if test_type == "fail_to_pass" {
+                &fail_to_pass_statuses.get()
+            } else {
+                &pass_to_pass_statuses.get()
+            };
             
-            // Get status for each stage
-            let base_status = stage_statuses.get("base")
-                .and_then(|s| s.as_ref())
-                .map(|s| s.status.as_str())
-                .unwrap_or("missing");
-            
-            let before_status = stage_statuses.get("before")
-                .and_then(|s| s.as_ref())
-                .map(|s| s.status.as_str())
-                .unwrap_or("missing");
-            
-            let after_status = stage_statuses.get("after")
-                .and_then(|s| s.as_ref())
-                .map(|s| s.status.as_str())
-                .unwrap_or("missing");
-            
-            
-            view! {
-                <div class="flex items-center gap-1" title="Base | Before | After">
-                    {render_status_icon(base_status)}
-                    {render_status_icon(before_status)}
-                    {render_status_icon(after_status)}
-                </div>
+            if let Some((base_status, before_status, after_status, _has_violations)) = statuses_map.get(&test_name) {
+                view! {
+                    <div class="flex items-center gap-1" title="Base | Before | After">
+                        {render_status_icon(base_status)}
+                        {render_status_icon(before_status)}
+                        {render_status_icon(after_status)}
+                    </div>
+                }
+            } else {
+                view! {
+                    <div class="flex items-center gap-1" title="Base | Before | After">
+                        {render_status_icon("missing")}
+                        {render_status_icon("missing")}
+                        {render_status_icon("missing")}
+                    </div>
+                }
             }
         } else {
             view! { 
                 <div class="flex items-center gap-1" title="Base | Before | After">
-                    {render_status_icon("missing")}
-                    {render_status_icon("missing")}
-                    {render_status_icon("missing")}
+                    {render_status_icon("ignored")}
+                    {render_status_icon("ignored")}
+                    {render_status_icon("ignored")}
                 </div>
             }
         }

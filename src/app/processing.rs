@@ -12,7 +12,6 @@ pub fn handle_submit(
     stages: RwSignal<HashMap<ProcessingStage, StageStatus>>,
     result: RwSignal<Option<ProcessingResult>>,
     error: RwSignal<Option<String>>,
-    load_file_contents: impl Fn() + Send + Sync + 'static + Copy,
     load_test_lists: impl Fn() + Send + Sync + 'static + Copy,
 ) {
     let link = deliverable_link.get().trim().to_string();
@@ -134,10 +133,12 @@ pub fn handle_submit(
                         };
 
                         result.set(Some(processing_result));
-                        current_stage.set(None);
+                        
+                        // Stage 3: Loading tests
+                        current_stage.set(Some(ProcessingStage::LoadingTests));
+                        update_stage_status(ProcessingStage::LoadingTests, StageStatus::Active);
                         
                         // After successful download, load additional data
-                        load_file_contents();
                         load_test_lists();
                     }
                     Err(e) => {
@@ -151,9 +152,8 @@ pub fn handle_submit(
                 error.set(Some(e));
                 update_stage_status(ProcessingStage::Validating, StageStatus::Error);
                 current_stage.set(None);
+                is_processing.set(false);
             }
         }
-
-        is_processing.set(false);
     });
 }

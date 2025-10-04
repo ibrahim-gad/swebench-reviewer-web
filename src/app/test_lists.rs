@@ -1,14 +1,18 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use super::types::{ProcessingResult, TestLists};
+use super::types::{ProcessingResult, TestLists, ProcessingStage, StageStatus};
+use std::collections::HashMap;
 
 pub fn load_test_lists(
     result: RwSignal<Option<ProcessingResult>>,
-    fail_to_pass_tests: RwSignal<Vec<String>>,
-    pass_to_pass_tests: RwSignal<Vec<String>>,
-    current_selection: RwSignal<String>,
-    search_for_test: impl Fn(String) + Send + Sync + 'static + Copy,
-    trigger_log_analysis: impl Fn() + Send + Sync + 'static + Copy,
+    #[allow(unused_variables)] fail_to_pass_tests: RwSignal<Vec<String>>,
+    #[allow(unused_variables)] pass_to_pass_tests: RwSignal<Vec<String>>,
+    #[allow(unused_variables)] current_selection: RwSignal<String>,
+    #[allow(unused_variables)] search_for_test: impl Fn(String) + Send + Sync + 'static + Copy,
+    #[allow(unused_variables)] trigger_log_analysis: impl Fn() + Send + Sync + 'static + Copy,
+    #[allow(unused_variables)] is_processing: RwSignal<bool>,
+    #[allow(unused_variables)] current_stage: RwSignal<Option<ProcessingStage>>,
+    #[allow(unused_variables)] stages: RwSignal<HashMap<ProcessingStage, StageStatus>>,
 ) {
     if result.get().is_none() {
         return;
@@ -44,6 +48,13 @@ pub fn load_test_lists(
                         current_selection.set("pass_to_pass".to_string());
                         search_for_test(p2p_tests[0].clone());
                     }
+                    
+                    // Complete the loading tests stage
+                    stages.update(|stages| {
+                        stages.insert(ProcessingStage::LoadingTests, StageStatus::Completed);
+                    });
+                    current_stage.set(None);
+                    is_processing.set(false);
                     
                     // Trigger log analysis after test lists are loaded
                     leptos::logging::log!("Test lists loaded successfully, triggering log analysis");

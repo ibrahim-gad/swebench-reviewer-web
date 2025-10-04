@@ -5,6 +5,7 @@ use super::test_checker::TestChecker;
 use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
 use super::file_viewer::FileViewer;
 use crate::components::language_selector::ProgrammingLanguage;
+use super::types::LoadedFileTypes;
 
 #[component]
 pub fn ReportCheckerInterface(
@@ -26,6 +27,8 @@ pub fn ReportCheckerInterface(
     selected_language: RwSignal<ProgrammingLanguage>,
     log_analysis_result: RwSignal<Option<LogAnalysisResult>>,
     log_analysis_loading: RwSignal<bool>,
+    loaded_file_types: RwSignal<LoadedFileTypes>,
+    result: RwSignal<Option<super::types::ProcessingResult>>,
 ) -> impl IntoView {
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let input_tab_active = move || active_main_tab.get() == "input";
@@ -175,6 +178,8 @@ pub fn ReportCheckerInterface(
                         active_tab=active_tab
                         file_contents=file_contents
                         loading_files=loading_files
+                        loaded_file_types=loaded_file_types
+                        result=result
                     />
                 </Show>
             </div>

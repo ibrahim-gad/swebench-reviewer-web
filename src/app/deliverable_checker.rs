@@ -21,6 +21,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
     let stages = RwSignal::new(HashMap::from([
         (ProcessingStage::Validating, StageStatus::Pending),
         (ProcessingStage::Downloading, StageStatus::Pending),
+        (ProcessingStage::LoadingTests, StageStatus::Pending),
     ]));
     let result = RwSignal::new(None::<ProcessingResult>);
     let error = RwSignal::new(None::<String>);
@@ -34,6 +35,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
     let active_main_tab = RwSignal::new("manual_checker".to_string());
     let file_contents = RwSignal::new(FileContents::default());
     let loading_files = RwSignal::new(false);
+    let loaded_file_types = RwSignal::new(LoadedFileTypes::default());
     
     // Manual checker state
     let fail_to_pass_tests = RwSignal::new(Vec::<String>::new());
@@ -144,7 +146,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
 
     // Helper functions for the enhanced functionality
     let load_file_contents_fn = move || {
-        load_file_contents(result, file_contents, loading_files);
+        load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
     };
     
     let search_for_test_fn = move |test_name: String| {
@@ -152,7 +154,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
     };
     
     let load_test_lists_fn = move || {
-        load_test_lists(result, fail_to_pass_tests, pass_to_pass_tests, current_selection, search_for_test_fn, trigger_log_analysis_fn);
+        load_test_lists(result, fail_to_pass_tests, pass_to_pass_tests, current_selection, search_for_test_fn, trigger_log_analysis_fn, is_processing, current_stage, stages);
     };
 
     let handle_submit_fn = move || {
@@ -164,7 +166,6 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
             stages,
             result,
             error,
-            load_file_contents_fn,
             load_test_lists_fn,
         );
     };
@@ -177,6 +178,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
         stages.set(HashMap::from([
             (ProcessingStage::Validating, StageStatus::Pending),
             (ProcessingStage::Downloading, StageStatus::Pending),
+            (ProcessingStage::LoadingTests, StageStatus::Pending),
         ]));
         result.set(None);
         error.set(None);
@@ -186,6 +188,7 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
         active_main_tab.set("manual_checker".to_string());
         file_contents.set(FileContents::default());
         loading_files.set(false);
+        loaded_file_types.set(LoadedFileTypes::default());
         fail_to_pass_tests.set(Vec::new());
         pass_to_pass_tests.set(Vec::new());
         selected_fail_to_pass_index.set(0);
@@ -207,8 +210,6 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
         log_analysis_loading.set(false);
     };
 
-    // Note: Removed early reactive effects that triggered log analysis too early
-    // Log analysis will now be triggered manually or after test lists are loaded
 
     view! {
         <div class="w-full h-full">
@@ -251,21 +252,6 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
                             >
                                 Submit
                             </button>
-                            
-                            <Show
-                                when=move || result.get().is_some() && selected_language.get() == ProgrammingLanguage::Rust
-                                fallback=|| view! { <div></div> }
-                            >
-                                <button
-                                    on:click=move |_| {
-                                        leptos::logging::log!("Manual trigger of log analysis");
-                                        trigger_log_analysis_fn();
-                                    }
-                                    class="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-full text-lg font-semibold shadow-lg transition-colors"
-                                >
-                                    "Analyze Logs"
-                                </button>
-                            </Show>
                         </div>
 
                         {move || error.get().map(|err|
@@ -305,6 +291,16 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
                                             Downloading
                                         </span>
                                     </div>
+
+                                    <div class="flex items-center justify-center gap-4">
+                                        {render_icon(ProcessingStage::LoadingTests, stages.get().get(&ProcessingStage::LoadingTests).cloned().unwrap_or(StageStatus::Pending))}
+                                        <span class=move || {
+                                            let status = stages.get().get(&ProcessingStage::LoadingTests).cloned().unwrap_or(StageStatus::Pending);
+                                            format!("text-lg font-medium {}", get_stage_text_class(status))
+                                        }>
+                                            Loading tests
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                                         }.into_any()
@@ -313,32 +309,6 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
                         }
                     }}
 
-                                {move || result.get().map(|res| {
-                                    // Only show the completion message if we haven't loaded test lists yet
-                                    if fail_to_pass_tests.get().is_empty() && pass_to_pass_tests.get().is_empty() {
-                        view! {
-                            <div class="mt-8 p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                                <h3 class="text-xl font-semibold text-green-900 dark:text-green-100 mb-4">
-                                                    Processing Complete - Loading Test Data...
-                                </h3>
-                                <p class="text-green-700 dark:text-green-300 mb-2">
-                                    Status: {res.status}
-                                </p>
-                                <p class="text-green-700 dark:text-green-300 mb-2">
-                                    Message: {res.message}
-                                </p>
-                                <p class="text-green-700 dark:text-green-300 mb-2">
-                                    Files Processed: {res.files_processed}
-                                </p>
-                                <p class="text-green-700 dark:text-green-300 mb-4">
-                                    Issues Found: {res.issues_found}
-                                </p>
-                                            </div>
-                                        }.into_any()
-                                    } else {
-                                        view! {}.into_any()
-                                    }
-                                })}
                             </div>
                         </div>
                     </div>
@@ -360,6 +330,8 @@ pub fn DeliverableCheckerPage() -> impl IntoView {
                     search_result_indices=search_result_indices
                     file_contents=file_contents
                     loading_files=loading_files
+                    loaded_file_types=loaded_file_types
+                    result=result
                     reset_state=reset_state
                     selected_language=selected_language
                     log_analysis_result=log_analysis_result

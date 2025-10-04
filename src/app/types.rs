@@ -80,11 +80,6 @@ impl FileContents {
             "agent" => self.agent.as_ref(),
             "main_json" => self.main_json.as_ref(),
             "report" => self.report.as_ref(),
-            "analysis" => self.analysis.as_ref(),
-            "base_analysis" => self.base_analysis.as_ref(),
-            "before_analysis" => self.before_analysis.as_ref(),
-            "after_analysis" => self.after_analysis.as_ref(),
-            "agent_analysis" => self.agent_analysis.as_ref(),
             _ => None,
         }
     }
@@ -94,6 +89,7 @@ impl FileContents {
 pub enum ProcessingStage {
     Validating,
     Downloading,
+    LoadingTests,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -106,20 +102,13 @@ pub enum StageStatus {
 
 // Log analysis types
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TestStatus {
-    pub test_name: String,
-    pub status: String, // "passed", "failed", "ignored", "missing"
-    pub r#type: String, // "fail_to_pass" or "pass_to_pass"
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogAnalysisResult {
     pub test_statuses: Vec<TestStatus>,
     pub rule_violations: RuleViolations,
     pub debug_info: DebugInfo,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RuleViolations {
     pub c1_failed_in_base_present_in_p2p: RuleViolation,
     pub c2_failed_in_after_present_in_f2p_or_p2p: RuleViolation,
@@ -130,23 +119,66 @@ pub struct RuleViolations {
     pub c7_f2p_tests_in_golden_source_diff: RuleViolation,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RuleViolation {
     pub has_problem: bool,
     pub examples: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DebugInfo {
     pub log_counts: Vec<LogCount>,
     pub duplicate_examples_per_log: std::collections::HashMap<String, Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct LogCount {
     pub label: String,
     pub passed: usize,
     pub failed: usize,
     pub ignored: usize,
     pub all: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TestStatus {
+    pub test_name: String,
+    pub status: String, // "passed", "failed", "ignored", "missing"
+    pub r#type: String, // "fail_to_pass" or "pass_to_pass"
+}
+
+#[derive(Clone, Default)]
+pub struct LoadedFileTypes {
+    pub base: bool,
+    pub before: bool,
+    pub after: bool,
+    pub agent: bool,
+    pub main_json: bool,
+    pub report: bool,
+}
+
+impl LoadedFileTypes {
+    pub fn is_loaded(&self, key: &str) -> bool {
+        match key {
+            "base" => self.base,
+            "before" => self.before,
+            "after" => self.after,
+            "agent" => self.agent,
+            "main_json" => self.main_json,
+            "report" => self.report,
+            _ => false,
+        }
+    }
+
+    pub fn set_loaded(&mut self, key: &str) {
+        match key {
+            "base" => self.base = true,
+            "before" => self.before = true,
+            "after" => self.after = true,
+            "agent" => self.agent = true,
+            "main_json" => self.main_json = true,
+            "report" => self.report = true,
+            _ => {},
+        }
+    }
 }
