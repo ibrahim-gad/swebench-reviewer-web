@@ -71,12 +71,6 @@ async fn fetch_new_token() -> Result<String> {
     };
 
     let header = Header::new(Algorithm::RS256);
-    
-    // Remove the header and footer from the PEM key
-    let private_key = service_account.private_key
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("\n", "");
 
     let key = EncodingKey::from_rsa_pem(service_account.private_key.as_bytes())
         .map_err(|e| anyhow!("Failed to parse private key: {}", e))?;

@@ -8,6 +8,7 @@ pub fn load_test_lists(
     pass_to_pass_tests: RwSignal<Vec<String>>,
     current_selection: RwSignal<String>,
     search_for_test: impl Fn(String) + Send + Sync + 'static + Copy,
+    trigger_log_analysis: impl Fn() + Send + Sync + 'static + Copy,
 ) {
     if result.get().is_none() {
         return;
@@ -43,6 +44,10 @@ pub fn load_test_lists(
                         current_selection.set("pass_to_pass".to_string());
                         search_for_test(p2p_tests[0].clone());
                     }
+                    
+                    // Trigger log analysis after test lists are loaded
+                    leptos::logging::log!("Test lists loaded successfully, triggering log analysis");
+                    trigger_log_analysis();
                 }
             }
         }

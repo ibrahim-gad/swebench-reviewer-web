@@ -103,3 +103,50 @@ pub enum StageStatus {
     Completed,
     Error,
 }
+
+// Log analysis types
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TestStatus {
+    pub test_name: String,
+    pub status: String, // "passed", "failed", "ignored", "missing"
+    pub r#type: String, // "fail_to_pass" or "pass_to_pass"
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LogAnalysisResult {
+    pub test_statuses: Vec<TestStatus>,
+    pub rule_violations: RuleViolations,
+    pub debug_info: DebugInfo,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RuleViolations {
+    pub c1_failed_in_base_present_in_p2p: RuleViolation,
+    pub c2_failed_in_after_present_in_f2p_or_p2p: RuleViolation,
+    pub c3_f2p_success_in_before: RuleViolation,
+    pub c4_p2p_missing_in_base_and_not_passing_in_before: RuleViolation,
+    pub c5_duplicates_in_same_log: RuleViolation,
+    pub c6_test_marked_failed_in_report_but_passing_in_agent: RuleViolation,
+    pub c7_f2p_tests_in_golden_source_diff: RuleViolation,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RuleViolation {
+    pub has_problem: bool,
+    pub examples: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DebugInfo {
+    pub log_counts: Vec<LogCount>,
+    pub duplicate_examples_per_log: std::collections::HashMap<String, Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LogCount {
+    pub label: String,
+    pub passed: usize,
+    pub failed: usize,
+    pub ignored: usize,
+    pub all: usize,
+}

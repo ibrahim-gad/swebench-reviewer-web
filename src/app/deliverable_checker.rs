@@ -7,10 +7,13 @@ use super::processing::handle_submit;
 use super::file_operations::load_file_contents;
 use super::test_lists::load_test_lists;
 use super::search_results::search_for_test;
-use super::report_checker_interface::ReportCheckerInterface;
+use super::deliverable_checker_interface::ReportCheckerInterface;
+
+// Import for log analysis
+use leptos::task::spawn_local;
 
 #[component]
-pub fn ReportCheckerPage() -> impl IntoView {
+pub fn DeliverableCheckerPage() -> impl IntoView {
     let deliverable_link = RwSignal::new(String::new());
     let selected_language = RwSignal::new(ProgrammingLanguage::default());
     let is_processing = RwSignal::new(false);
@@ -21,6 +24,10 @@ pub fn ReportCheckerPage() -> impl IntoView {
     ]));
     let result = RwSignal::new(None::<ProcessingResult>);
     let error = RwSignal::new(None::<String>);
+    
+    // Analysis processing state
+    let log_analysis_result = RwSignal::new(None::<LogAnalysisResult>);
+    let log_analysis_loading = RwSignal::new(false);
     
     // Additional state for the full Report Checker functionality
     let active_tab = RwSignal::new("base".to_string());
@@ -57,6 +64,84 @@ pub fn ReportCheckerPage() -> impl IntoView {
         });
     };
     
+    // Function to trigger log analysis when language is Rust
+    let trigger_log_analysis_fn = move || {
+        let language = selected_language.get();
+        leptos::logging::log!("trigger_log_analysis_fn called - Language: {:?}", language);
+        
+        if language == ProgrammingLanguage::Rust {
+            if let Some(processing_result) = result.get() {
+                let file_paths = processing_result.file_paths.clone();
+                leptos::logging::log!("Starting log analysis for Rust with {} files", file_paths.len());
+                
+                // Set loading state and clear previous results
+                log_analysis_loading.set(true);
+                log_analysis_result.set(None);
+                
+                // Call the API endpoint
+                spawn_local(async move {
+                    leptos::logging::log!("Calling analyze_logs API endpoint...");
+                    
+                    #[cfg(feature = "hydrate")]
+                    {
+                        let resp = gloo_net::http::Request::post("/api/analyze_logs")
+                            .json(&serde_json::json!({
+                                "file_paths": file_paths
+                            }))
+                            .unwrap()
+                            .send()
+                            .await;
+                        
+                        match resp {
+                            Ok(resp) => {
+                                let is_success = resp.status() >= 200 && resp.status() < 300;
+                                
+                                if is_success {
+                                    match resp.json::<LogAnalysisResult>().await {
+                                        Ok(analysis_result) => {
+                                            leptos::logging::log!("Log analysis successful, got {} test statuses", analysis_result.test_statuses.len());
+                                            log_analysis_result.set(Some(analysis_result));
+                                        },
+                                        Err(e) => {
+                                            leptos::logging::log!("Failed to parse log analysis response: {:?}", e);
+                                            log_analysis_result.set(None);
+                                        }
+                                    }
+                                } else {
+                                    let error_text = resp.text().await.map_err(|e| format!("Error response: {}", e));
+                                    match error_text {
+                                        Ok(text) => leptos::logging::log!("Analyze logs failed: {}", text),
+                                        Err(e) => leptos::logging::log!("Analyze logs failed: {}", e),
+                                    }
+                                    log_analysis_result.set(None);
+                                }
+                            }
+                            Err(e) => {
+                                leptos::logging::log!("Analyze logs request failed: {}", e);
+                                log_analysis_result.set(None);
+                            }
+                        }
+                    }
+                    
+                    #[cfg(not(feature = "hydrate"))]
+                    {
+                        leptos::logging::log!("Client-side only operation");
+                        log_analysis_result.set(None);
+                    }
+                    
+                    log_analysis_loading.set(false);
+                });
+            } else {
+                leptos::logging::log!("No processing result available for log analysis");
+            }
+        } else {
+            leptos::logging::log!("Language is not Rust, clearing log analysis result");
+            // Clear log analysis result for non-Rust languages
+            log_analysis_result.set(None);
+            log_analysis_loading.set(false);
+        }
+    };
+
     // Helper functions for the enhanced functionality
     let load_file_contents_fn = move || {
         load_file_contents(result, file_contents, loading_files);
@@ -67,7 +152,7 @@ pub fn ReportCheckerPage() -> impl IntoView {
     };
     
     let load_test_lists_fn = move || {
-        load_test_lists(result, fail_to_pass_tests, pass_to_pass_tests, current_selection, search_for_test_fn);
+        load_test_lists(result, fail_to_pass_tests, pass_to_pass_tests, current_selection, search_for_test_fn, trigger_log_analysis_fn);
     };
 
     let handle_submit_fn = move || {
@@ -118,7 +203,12 @@ pub fn ReportCheckerPage() -> impl IntoView {
             ("before".to_string(), 0usize),
             ("after".to_string(), 0usize),
         ]));
+        log_analysis_result.set(None);
+        log_analysis_loading.set(false);
     };
+
+    // Note: Removed early reactive effects that triggered log analysis too early
+    // Log analysis will now be triggered manually or after test lists are loaded
 
     view! {
         <div class="w-full h-full">
@@ -153,13 +243,30 @@ pub fn ReportCheckerPage() -> impl IntoView {
                             </div>
                         </div>
 
-                        <button
-                            on:click=move |_| handle_submit_fn()
-                            disabled=move || is_processing.get() || deliverable_link.get().trim().is_empty()
-                            class="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full text-lg font-semibold shadow-lg transition-colors disabled:cursor-not-allowed"
-                        >
-                            Submit
-                        </button>
+                        <div class="flex gap-4 justify-center">
+                            <button
+                                on:click=move |_| handle_submit_fn()
+                                disabled=move || is_processing.get() || deliverable_link.get().trim().is_empty()
+                                class="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full text-lg font-semibold shadow-lg transition-colors disabled:cursor-not-allowed"
+                            >
+                                Submit
+                            </button>
+                            
+                            <Show
+                                when=move || result.get().is_some() && selected_language.get() == ProgrammingLanguage::Rust
+                                fallback=|| view! { <div></div> }
+                            >
+                                <button
+                                    on:click=move |_| {
+                                        leptos::logging::log!("Manual trigger of log analysis");
+                                        trigger_log_analysis_fn();
+                                    }
+                                    class="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-full text-lg font-semibold shadow-lg transition-colors"
+                                >
+                                    "Analyze Logs"
+                                </button>
+                            </Show>
+                        </div>
 
                         {move || error.get().map(|err|
                             view! {
@@ -254,6 +361,9 @@ pub fn ReportCheckerPage() -> impl IntoView {
                     file_contents=file_contents
                     loading_files=loading_files
                     reset_state=reset_state
+                    selected_language=selected_language
+                    log_analysis_result=log_analysis_result
+                    log_analysis_loading=log_analysis_loading
                 />
             </Show>
         </div>

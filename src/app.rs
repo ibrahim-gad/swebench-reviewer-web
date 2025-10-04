@@ -13,9 +13,9 @@ pub mod search_results;
 pub mod file_viewer;
 pub mod test_checker;
 pub mod log_search_results;
-pub mod report_checker_interface;
-pub mod report_checker;
-use report_checker::ReportCheckerPage;
+pub mod deliverable_checker_interface;
+pub mod deliverable_checker;
+use deliverable_checker::DeliverableCheckerPage;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -77,7 +77,7 @@ pub fn MainApp() -> impl IntoView {
             // Main content
             <div class="w-full bg-white dark:bg-gray-800" style="height: calc(100vh - 65px);">
                 <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=ReportCheckerPage/>
+                    <Route path=StaticSegment("") view=DeliverableCheckerPage/>
                 </Routes>
             </div>
         </div>

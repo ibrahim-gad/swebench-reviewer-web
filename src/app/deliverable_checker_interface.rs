@@ -1,9 +1,10 @@
 use leptos::prelude::*;
 use std::collections::HashMap;
-use super::types::{LogSearchResults, FileContents};
+use super::types::{LogSearchResults, FileContents, LogAnalysisResult};
 use super::test_checker::TestChecker;
 use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
 use super::file_viewer::FileViewer;
+use crate::components::language_selector::ProgrammingLanguage;
 
 #[component]
 pub fn ReportCheckerInterface(
@@ -22,6 +23,9 @@ pub fn ReportCheckerInterface(
     file_contents: RwSignal<FileContents>,
     loading_files: RwSignal<bool>,
     reset_state: impl Fn() + Send + Sync + 'static + Copy,
+    selected_language: RwSignal<ProgrammingLanguage>,
+    log_analysis_result: RwSignal<Option<LogAnalysisResult>>,
+    log_analysis_loading: RwSignal<bool>,
 ) -> impl IntoView {
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let input_tab_active = move || active_main_tab.get() == "input";
@@ -59,7 +63,20 @@ pub fn ReportCheckerInterface(
                                     }
                                 }
                             >
-                                Tests Checker
+                                <div class="flex items-center gap-2">
+                                    <span>"Tests Checker"</span>
+                                    <Show
+                                        when=move || selected_language.get() == ProgrammingLanguage::Rust && log_analysis_loading.get()
+                                        fallback=|| view! { <div></div> }
+                                    >
+                                        <div class="w-4 h-4">
+                                            <svg class="animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                        </div>
+                                    </Show>
+                                </div>
                             </button>
                             <button
                                 on:click=move |_| {
@@ -141,6 +158,9 @@ pub fn ReportCheckerInterface(
                                 search_for_test=search_for_test
                                 _search_results=search_results
                                 _search_result_indices=search_result_indices
+                                selected_language=selected_language
+                                log_analysis_result=log_analysis_result
+                                _log_analysis_loading=log_analysis_loading
                             />
                         </div>
 

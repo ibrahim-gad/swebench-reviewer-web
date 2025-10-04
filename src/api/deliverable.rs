@@ -12,7 +12,7 @@ use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_cont
 use crate::auth::get_access_token;
 
 #[cfg(feature = "ssr")]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct FileInfo {
     pub id: String,
     pub name: String,
@@ -48,15 +48,174 @@ pub struct DownloadRequest {
 }
 
 #[cfg(feature = "ssr")]
+async fn validate_cached_folder(
+    folder_id: &str,
+    instance_name: &str,
+    cached_path: &std::path::Path,
+) -> Result<ValidationResult, String> {
+    // Check if all required files exist in the cached folder
+    let instance_json_name = format!("{}.json", instance_name);
+    let instance_json_path = cached_path.join("main").join(&instance_json_name);
+    
+    if !instance_json_path.exists() {
+        return Err(format!(
+            "Missing required file in cache: {}. Cached files: [{}]",
+            instance_json_name,
+            get_cached_file_list(cached_path).join(", ")
+        ));
+    }
+
+    // Check logs folder and required log files
+    let logs_path = cached_path.join("logs");
+    if !logs_path.exists() || !logs_path.is_dir() {
+        return Err("Missing required 'logs' folder in cache".to_string());
+    }
+
+    let required_suffixes = vec![
+        "_after.log",
+        "_before.log", 
+        "_base.log",
+        "_post_agent_patch.log",
+    ];
+
+    for suffix in &required_suffixes {
+        let suffix_lower = suffix.to_lowercase();
+        let has_file = std::fs::read_dir(&logs_path)
+            .map_err(|e| format!("Failed to read logs directory: {}", e))?
+            .filter_map(|entry| entry.ok())
+            .any(|entry| {
+                let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                file_name.ends_with(&suffix_lower) && entry.path().is_file()
+            });
+
+        if !has_file {
+            return Err(format!("Missing required log file ending with: {} in cache", suffix));
+        }
+    }
+
+    // Check results folder and report.json
+    let results_path = cached_path.join("results");
+    if !results_path.exists() || !results_path.is_dir() {
+        return Err("Missing required 'results' folder in cache".to_string());
+    }
+
+    let report_path = results_path.join("report.json");
+    if !report_path.exists() || !report_path.is_file() {
+        return Err("Missing required file: report.json in results folder cache".to_string());
+    }
+
+    // Build files_to_download list from cached files
+    let mut files_to_download = Vec::new();
+
+    // Add instance JSON file
+    files_to_download.push(FileInfo {
+        id: "cached".to_string(), // Use placeholder ID for cached files
+        name: instance_json_name.clone(),
+        path: format!("main/{}", instance_json_name),
+    });
+
+    // Add log files
+    for suffix in &required_suffixes {
+        if let Some(log_file) = std::fs::read_dir(&logs_path)
+            .map_err(|e| format!("Failed to read logs directory: {}", e))?
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                file_name.ends_with(&suffix.to_lowercase()) && entry.path().is_file()
+            }) {
+            files_to_download.push(FileInfo {
+                id: "cached".to_string(),
+                name: log_file.file_name().to_string_lossy().to_string(),
+                path: format!("logs/{}", log_file.file_name().to_string_lossy()),
+            });
+        }
+    }
+
+    // Add report.json
+    files_to_download.push(FileInfo {
+        id: "cached".to_string(),
+        name: "report.json".to_string(),
+        path: "results/report.json".to_string(),
+    });
+
+    Ok(ValidationResult {
+        files_to_download,
+        folder_id: folder_id.to_string(),
+    })
+}
+
+#[cfg(feature = "ssr")]
+fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
+    let mut files = Vec::new();
+    
+    if let Ok(entries) = std::fs::read_dir(cached_path) {
+        for entry in entries.flatten() {
+            if entry.path().is_file() {
+                files.push(entry.file_name().to_string_lossy().to_string());
+            } else if entry.path().is_dir() {
+                if let Ok(sub_entries) = std::fs::read_dir(entry.path()) {
+                    for sub_entry in sub_entries.flatten() {
+                        if sub_entry.path().is_file() {
+                            files.push(format!("{}/{}", 
+                                entry.file_name().to_string_lossy(),
+                                sub_entry.file_name().to_string_lossy()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    files
+}
+
+#[cfg(feature = "ssr")]
 async fn validate_deliverable_impl(
     payload: ValidateRequest,
 ) -> Result<ValidationResult, String> {
+    let folder_id = extract_drive_folder_id(&payload.folder_link)
+        .ok_or("Invalid Google Drive folder link. Please provide a valid folder URL.")?;
+
+    // Check if we have a cached folder first
+    let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    let temp_path = temp_dir.path().to_string_lossy().to_string();
+    let base_temp_dir = std::path::Path::new(&temp_path).parent().unwrap().join("swe-reviewer-temp");
+    let persist_dir = base_temp_dir.join(&folder_id);
+
+    if persist_dir.exists() {
+        // Try to validate against cached folder first
+        let access_token = get_access_token()
+            .await
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+
+        let folder_meta = get_folder_metadata(&folder_id, &access_token).await
+            .map_err(|e| format!("Failed to get folder metadata: {}", e))?;
+
+        let folder_name = folder_meta["name"].as_str().unwrap_or("");
+        let instance_name = folder_name.split_whitespace()
+            .next()
+            .ok_or("Could not extract instance name from folder name")?;
+
+        match validate_cached_folder(&folder_id, instance_name, &persist_dir).await {
+            Ok(result) => {
+                // Cached validation succeeded, return the result
+                return Ok(result);
+            }
+            Err(cached_error) => {
+                // Cached validation failed, remove the cache and fall back to remote validation
+                eprintln!("Cached validation failed: {}. Removing cache and retrying with remote validation.", cached_error);
+                if let Err(remove_error) = std::fs::remove_dir_all(&persist_dir) {
+                    eprintln!("Warning: Failed to remove cached folder: {}", remove_error);
+                }
+            }
+        }
+    }
+
+    // Fall back to remote validation
     let access_token = get_access_token()
         .await
         .map_err(|e| format!("Failed to get access token: {}", e))?;
-
-    let folder_id = extract_drive_folder_id(&payload.folder_link)
-        .ok_or("Invalid Google Drive folder link. Please provide a valid folder URL.")?;
 
     let folder_meta = get_folder_metadata(&folder_id, &access_token).await
         .map_err(|e| format!("Failed to get folder metadata: {}", e))?;
@@ -214,6 +373,8 @@ async fn download_deliverable_impl(
 
     if persist_dir.exists() {
         let mut cached_files = Vec::new();
+        let mut all_files_cached = true;
+        
         for file_info in &payload.files_to_download {
             let cached_file_path = persist_dir.join(&file_info.path);
             if cached_file_path.exists() {
@@ -222,10 +383,13 @@ async fn download_deliverable_impl(
                     name: file_info.name.clone(),
                     path: cached_file_path.to_string_lossy().to_string(),
                 });
+            } else {
+                all_files_cached = false;
+                break;
             }
         }
 
-        if !cached_files.is_empty() {
+        if all_files_cached && !cached_files.is_empty() {
             return Ok(DownloadResult {
                 temp_directory: persist_dir.to_string_lossy().to_string(),
                 downloaded_files: cached_files,
@@ -235,8 +399,16 @@ async fn download_deliverable_impl(
 
     let mut downloaded_files = Vec::new();
     let client = reqwest::Client::new();
+    
+    // Store files_to_download for later use with cached files
+    let files_to_download = payload.files_to_download.clone();
 
     for file_info in payload.files_to_download {
+        // Skip files that are already cached (have placeholder ID)
+        if file_info.id == "cached" {
+            continue;
+        }
+
         let file_path = std::path::Path::new(&temp_path).join(&file_info.path);
         let file_dir_path = file_path.parent().unwrap_or(std::path::Path::new(""));
         if !file_dir_path.exists() {
@@ -271,6 +443,7 @@ async fn download_deliverable_impl(
 
     fs::create_dir_all(&persist_dir).map_err(|e| format!("Failed to create persist dir: {}", e))?;
 
+    // Copy newly downloaded files to persist directory
     for file_info in &downloaded_files {
         let source = std::path::Path::new(&file_info.path);
         let relative_path = source.strip_prefix(&temp_path).unwrap();
@@ -283,7 +456,10 @@ async fn download_deliverable_impl(
         fs::copy(source, &dest).map_err(|e| format!("Failed to copy file: {}", e))?;
     }
 
+    // Build final file list including both cached and newly downloaded files
     let mut updated_files = Vec::new();
+    
+    // Add newly downloaded files
     for file_info in downloaded_files {
         let source = std::path::Path::new(&file_info.path);
         let relative_path = source.strip_prefix(&temp_path).unwrap();
@@ -294,6 +470,20 @@ async fn download_deliverable_impl(
             name: file_info.name,
             path: new_path.to_string_lossy().to_string(),
         });
+    }
+
+    // Add cached files (those with placeholder IDs)
+    for file_info in &files_to_download {
+        if file_info.id == "cached" {
+            let cached_file_path = persist_dir.join(&file_info.path);
+            if cached_file_path.exists() {
+                updated_files.push(FileInfo {
+                    id: file_info.id.clone(),
+                    name: file_info.name.clone(),
+                    path: cached_file_path.to_string_lossy().to_string(),
+                });
+            }
+        }
     }
 
     Ok(DownloadResult {
