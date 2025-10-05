@@ -8,13 +8,35 @@ use super::file_operations::load_file_contents;
 use super::test_lists::load_test_lists;
 use super::search_results::search_for_test;
 use super::deliverable_checker_interface::DeliverableCheckerInterface;
+use leptos::Params;
+use leptos_router::params::Params;
+use leptos_router::hooks::use_params;
+use leptos_router::hooks::use_navigate;
 
-// Import for log analysis
 use leptos::task::spawn_local;
+
+#[derive(Params, PartialEq)]
+struct DeliverableCheckerParams {
+    deliverable_id: Option<String>,
+}
 
 #[component]
 pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingResult>>) -> impl IntoView {
-    let deliverable_link = RwSignal::new(String::new());
+    let params = use_params::<DeliverableCheckerParams>();
+    let deliverable_id = 
+        params
+            .read()
+            .as_ref()
+            .ok()
+            .and_then(|params| if let Some(deliverable_id) = &params.deliverable_id {
+                Some(format!("https://drive.google.com/drive/folders/{}", deliverable_id))
+            } else {
+                None
+            })
+            .unwrap_or_default();
+
+    let initial_deliverable_link = RwSignal::new(deliverable_id.clone());
+    let deliverable_link = RwSignal::new(deliverable_id);
     let is_processing = RwSignal::new(false);
     let current_stage = RwSignal::new(None::<ProcessingStage>);
     let stages = RwSignal::new(HashMap::from([
@@ -24,7 +46,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
     ]));
     let result = RwSignal::new(None::<ProcessingResult>);
     let error = RwSignal::new(None::<String>);
-    
+
     // Analysis processing state
     let log_analysis_result = RwSignal::new(None::<LogAnalysisResult>);
     let log_analysis_loading = RwSignal::new(false);
@@ -131,7 +153,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             } else {
                 leptos::logging::log!("No processing result available for log analysis");
             }
-
     };
 
     // Helper functions for the enhanced functionality
@@ -157,6 +178,43 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             error,
             load_test_lists_fn,
         );
+    };
+
+    // New manual submit function for the button with redirect
+    let manual_submit_fn = move |_| {
+        let link = deliverable_link.get().trim().to_string();
+        if link.is_empty() {
+            return;
+        }
+
+        // Simple client-side validation for Drive folder
+        if link.contains("drive.google.com/drive/folders/") {
+            let folder_id = link.split("folders/").nth(1)
+                .and_then(|s| s.split(|c| c == '/' || c == '?').next())
+                .unwrap_or("")
+                .to_string();
+
+            if !folder_id.is_empty() && folder_id.len() >= 20 { // Basic ID length check
+                leptos::logging::log!("Manual submit: extracted folder ID {}, redirecting", folder_id);
+                
+                // Get navigate function and redirect to trigger auto-submit
+                let navigate_fn = use_navigate();
+                
+                // Brief processing state for UX
+                is_processing.set(true);
+                error.set(None);
+                
+                // Navigate to the route which will trigger auto-processing
+                navigate_fn(&format!("/{}", folder_id), Default::default());
+                
+                // Reset processing state immediately - auto-submit will handle loading
+                is_processing.set(false);
+            } else {
+                error.set(Some("Invalid folder ID extracted from link".to_string()));
+            }
+        } else {
+            error.set(Some("Please enter a valid Google Drive folder link (https://drive.google.com/drive/folders/...".to_string()));
+        }
     };
 
     let reset_state = move || {
@@ -198,6 +256,20 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         log_analysis_loading.set(false);
     };
 
+    // Auto-submit effect when deliverable_id is provided via route (only for initial route value)
+    Effect::new(move |_| {
+        let link = deliverable_link.get();
+        let initial_link = initial_deliverable_link.get();
+        if !initial_link.is_empty() 
+            && link == initial_link 
+            && !is_processing.get() 
+            && result.get().is_none() 
+            && deliverable_link.get().starts_with("https://drive.google.com/drive/folders/") {
+            leptos::logging::log!("Auto-submitting for deliverable from route: {}", link);
+            handle_submit_fn();
+        }
+    });
+
     Effect::new(move |_| {
         if let Some(_) = result.get() {
             if !loading_files.get() && file_contents.get().main_json.is_none() {
@@ -232,7 +304,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             }
         }
     });
-
 
     view! {
         <div class="w-full h-full">
@@ -271,7 +342,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
 
                                         <div class="flex gap-4 justify-center">
                                             <button
-                                                on:click=move |_| handle_submit_fn()
+                                                on:click=manual_submit_fn
                                                 disabled=move || {
                                                     is_processing.get()
                                                         || deliverable_link.get().trim().is_empty()
@@ -368,7 +439,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                                                     </div>
                                                 </div>
                                             }
-                                                .into_any()
+                                            .into_any()
                                         } else {
                                             view! {}.into_any()
                                         }
@@ -406,7 +477,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         </div>
     }
 }
-
 
 fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
     match status {

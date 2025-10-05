@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
     components::{Route, Router, Routes},
-    StaticSegment,
+    ParamSegment, StaticSegment,
 };
 
 use crate::app::types::ProcessingResult;
@@ -155,6 +155,7 @@ pub fn MainApp() -> impl IntoView {
             <div class="w-full bg-white dark:bg-gray-800" style="height: calc(100vh - 65px);">
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=move || DeliverableCheckerPage(DeliverableCheckerPageProps { current_deliverable: current_deliverable.clone() }) />
+                    <Route path=ParamSegment("deliverable_id") view=move || DeliverableCheckerPage(DeliverableCheckerPageProps { current_deliverable: current_deliverable.clone() }) />
                 </Routes>
             </div>
         </div>

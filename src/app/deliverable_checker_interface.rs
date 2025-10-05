@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use std::collections::HashMap;
+use leptos_router::hooks::use_navigate;
 use super::types::{LogSearchResults, FileContents, LogAnalysisResult};
 use super::test_checker::TestChecker;
 use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
@@ -28,8 +29,8 @@ pub fn DeliverableCheckerInterface(
     log_analysis_loading: RwSignal<bool>,
     loaded_file_types: RwSignal<LoadedFileTypes>,
     result: RwSignal<Option<super::types::ProcessingResult>>,
-    #[prop(optional)] selected_violations: RwSignal<Vec<super::test_checker::RuleViolationInfo>>,
 ) -> impl IntoView {
+    let navigate_fn = use_navigate();
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let input_tab_active = move || active_main_tab.get() == "input";
 
@@ -141,9 +142,12 @@ pub fn DeliverableCheckerInterface(
             <div class="flex-none bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1 shadow-sm mb-1">
                 // Single line with back button, centered title, and copy functionality
                 <div class="flex items-center justify-between gap-4 relative">
-                    // Back button
+                    // Back button - now navigates to root
                     <button
-                        on:click=move |_| reset_state()
+                        on:click=move |_| {
+                            reset_state();
+                            navigate_fn("/", Default::default());
+                        }
                         class="flex items-center gap-2 transition-colors text-sm whitespace-nowrap text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                     >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -280,7 +284,8 @@ pub fn DeliverableCheckerInterface(
                                         </div>
                                     }
                                 } else {
-                                    view! {
+                                    
+                                    git commitview! {
                                         <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
                                             <div></div>
                                         </div>
