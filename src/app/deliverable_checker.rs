@@ -34,7 +34,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                 None
             })
             .unwrap_or_default();
-
+            leptos::logging::log!("Deliverable ID: {}", deliverable_id);
     let initial_deliverable_link = RwSignal::new(deliverable_id.clone());
     let deliverable_link = RwSignal::new(deliverable_id);
     let is_processing = RwSignal::new(false);
@@ -203,7 +203,8 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                 // Brief processing state for UX
                 is_processing.set(true);
                 error.set(None);
-                
+                result.set(None);
+                initial_deliverable_link.set(format!("https://drive.google.com/drive/folders/{}", folder_id.clone()));
                 // Navigate to the route which will trigger auto-processing
                 navigate_fn(&format!("/{}", folder_id), Default::default());
                 
@@ -266,6 +267,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             && result.get().is_none() 
             && deliverable_link.get().starts_with("https://drive.google.com/drive/folders/") {
             leptos::logging::log!("Auto-submitting for deliverable from route: {}", link);
+            initial_deliverable_link.set(String::new());
             handle_submit_fn();
         }
     });
