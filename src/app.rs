@@ -66,17 +66,20 @@ pub fn MainApp() -> impl IntoView {
     view! {
         <div class="min-h-screen bg-gray-50 h-screen">
             // Header
-            <div class="bg-white shadow-sm border-b border-gray-200">
+            <div class="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700">
                 <div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="flex justify-between items-center h-16">
                         <div class="flex items-center">
-                            <h1 class="text-xl font-semibold text-gray-900">
+                            <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
                                 "SWE Reviewer"
                             </h1>
                         </div>
                         <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
-                        <span class="text-xl font-black text-gray-700">
-                            {move || current_deliverable.get().map_or(String::new(), |d| format!("[{}]", d.instance_id.clone())) }
+                        <span class="text-xl font-black text-gray-700 dark:text-white">
+                            {move || current_deliverable.get().map_or(String::new(), |d| match d.instance_id {
+                                id if !id.is_empty() => format!("[{}]", id),
+                                _ => String::new()
+                            }) }
                         </span>
                         </Show>
                         <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
@@ -84,7 +87,7 @@ pub fn MainApp() -> impl IntoView {
                                 <a 
                                     href=move || current_deliverable.get().map_or(String::new(), |d| d.deliverable_link.clone())
                                     target="_blank"
-                                    class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                    class="text-sm text-blue-600 hover:text-blue-800 underline dark:text-blue-400 dark:hover:text-blue-300"
                                 >
                                     "Deliverable"
                                 </a>
@@ -102,7 +105,7 @@ pub fn MainApp() -> impl IntoView {
                                             } else { String::new() }
                                         }
                                         target="_blank"
-                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline dark:text-blue-400 dark:hover:text-blue-300"
                                     >
                                         {move || {
                                             if let Some(d) = current_deliverable.get() {
@@ -127,7 +130,7 @@ pub fn MainApp() -> impl IntoView {
                                             } else { String::new() }
                                         }
                                         target="_blank"
-                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline dark:text-blue-400 dark:hover:text-blue-300"
                                     >
                                         {move || {
                                             if let Some(d) = current_deliverable.get() {
@@ -140,7 +143,7 @@ pub fn MainApp() -> impl IntoView {
                                     <a 
                                         href=move || current_deliverable.get().map_or(String::new(), |d| format!("https://swe-bench-plus.turing.com/instances/{}", d.instance_id))
                                         target="_blank"
-                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline dark:text-blue-400 dark:hover:text-blue-300"
                                     >
                                         "SWE URL"
                                     </a>

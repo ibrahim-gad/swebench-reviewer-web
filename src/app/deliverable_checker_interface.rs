@@ -285,7 +285,7 @@ pub fn DeliverableCheckerInterface(
                                     }
                                 } else {
                                     
-                                    git commitview! {
+                                    view! {
                                         <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
                                             <div></div>
                                         </div>

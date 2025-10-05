@@ -262,7 +262,7 @@ pub fn TestChecker(
     let render_status_icon = move |status: &str| {
         match status {
             "passed" => view! {
-                <div class="w-4 h-4 flex items-center justify-center bg-green-100 dark:bg-green-900/50 rounded-full">
+                <div class="w-4 h-4 flex items-center justify-center bg-green-100 dark:bg-green-300 rounded-full">
                     <img 
                         src="https://img.icons8.com/?id=11695&format=png&size=16" 
                         alt="Passed" 
@@ -271,7 +271,7 @@ pub fn TestChecker(
                 </div>
             },
             "failed" => view! {
-                <div class="w-4 h-4 flex items-center justify-center bg-red-100 dark:bg-red-900/50 rounded-full">
+                <div class="w-4 h-4 flex items-center justify-center bg-red-100 dark:bg-red-300 rounded-full">
                     <img 
                         src="https://img.icons8.com/?id=3062&format=png&size=16" 
                         alt="Failed" 
@@ -280,7 +280,7 @@ pub fn TestChecker(
                 </div>
             },
             "missing" => view! {
-                <div class="w-4 h-4 flex items-center justify-center bg-yellow-100 dark:bg-yellow-900/50 rounded-full">
+                <div class="w-4 h-4 flex items-center justify-center bg-yellow-100 dark:bg-yellow-300 rounded-full">
                     <img 
                         src="https://img.icons8.com/?id=Kc1iMzD0T01B&format=png&size=16" 
                         alt="Ignored" 
