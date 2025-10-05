@@ -1,23 +1,17 @@
-#[cfg(feature = "ssr")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "ssr")]
 use axum::{Json, response::Response, body::Body};
 
-
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct SearchLogsRequest {
     pub file_paths: Vec<String>,
     pub test_name: String,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct AnalyzeLogsRequest {
     pub file_paths: Vec<String>,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct SearchResult {
     pub line_number: usize,
@@ -26,7 +20,6 @@ pub struct SearchResult {
     pub context_after: Vec<String>,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct LogSearchResults {
     pub base_results: Vec<SearchResult>,
@@ -34,7 +27,6 @@ pub struct LogSearchResults {
     pub after_results: Vec<SearchResult>,
 }
 
-#[cfg(feature = "ssr")]
 pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSearchResults, String> {
     let base_log = file_paths.iter().find(|path| path.to_lowercase().contains("base.log"));
     let before_log = file_paths.iter().find(|path| path.to_lowercase().contains("before.log"));
@@ -65,7 +57,6 @@ pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSear
     })
 }
 
-#[cfg(feature = "ssr")]
 fn search_in_log_file(file_path: &str, test_name: &str) -> Result<Vec<SearchResult>, String> {
     use std::fs;
     
@@ -112,7 +103,6 @@ fn search_in_log_file(file_path: &str, test_name: &str) -> Result<Vec<SearchResu
     Ok(results)
 }
 
-#[cfg(feature = "ssr")]
 fn get_search_terms(test_name: &str) -> Vec<String> {
     let mut search_terms = vec![test_name.to_string()];
     
@@ -127,7 +117,6 @@ fn get_search_terms(test_name: &str) -> Vec<String> {
 }
 
 // API endpoint handlers
-#[cfg(feature = "ssr")]
 pub async fn search_logs_endpoint(
     Json(payload): Json<SearchLogsRequest>,
 ) -> Response {
@@ -144,7 +133,6 @@ pub async fn search_logs_endpoint(
     }
 }
 
-#[cfg(feature = "ssr")]
 pub async fn analyze_logs_endpoint(
     Json(payload): Json<AnalyzeLogsRequest>,
 ) -> Response {

@@ -296,28 +296,6 @@ pub fn TestChecker(
         }
     };
 
-    // Helper function to render rule violations under a test
-    let render_rule_violations = move |violated_rules: Vec<RuleViolationInfo>| {
-        if violated_rules.is_empty() {
-            view! { 
-                <div class="mt-1 ml-8 space-y-1 max-h-20 overflow-y-auto">
-                    <div></div>
-                </div>
-            }
-        } else {
-            view! {
-                <div class="mt-1 ml-8 space-y-1 max-h-20 overflow-y-auto">
-                    {violated_rules.into_iter().map(|rule| view! {
-                        <div class="p-1.5 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
-                            <div class="font-medium">{rule.rule_name.to_uppercase()}</div>
-                            <div class="text-red-700 dark:text-red-300">{rule.description}</div>
-                        </div>
-                    }).collect_view()}
-                </div>
-            }
-        }
-    };
-
     // Refactored helper function to render status row using precomputed statuses - updated to include violations
     let render_status_row = move |test_name: String, test_type: &str| {
         if selected_language.get() == ProgrammingLanguage::Rust {
@@ -412,8 +390,6 @@ pub fn TestChecker(
                             // Make violation computation reactive to analysis changes
                             let test_name_for_violations = test_name.clone();
                             let test_name_for_violations_memo = test_name_for_violations.clone(); // Clone for memo
-                            let test_name_for_violations_has = test_name_for_violations.clone(); // Clone for has_violations
-                            let test_name_for_violations_render = test_name_for_violations.clone(); // Clone for rendering
                             
                             let violated_rules_signal = Memo::new(move |_| {
                                 let analysis = log_analysis_result.get();
@@ -426,7 +402,6 @@ pub fn TestChecker(
                                 has
                             };
                             
-                            let rules_for_render = move || violated_rules_signal.get();
                             
                             view! {
                                 <div

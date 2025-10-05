@@ -131,7 +131,6 @@ impl LogParser {
             base_log.unwrap(),
             before_log.unwrap(),
             after_log.unwrap(),
-            agent_log,
             report_data.as_ref(),
             file_paths,
         );
@@ -177,7 +176,6 @@ impl LogParser {
         base_path: &str,
         before_path: &str,
         after_path: &str,
-        agent_path: Option<&String>,
         report_data: Option<&serde_json::Value>,
         file_paths: &[String],
     ) -> LogAnalysisResult {
@@ -203,10 +201,6 @@ impl LogParser {
 
         // Rule checks
         let (rule_violations, dup_map) = self.perform_rule_checks(
-            &base_parsed,
-            &before_parsed,
-            &after_parsed,
-            agent_parsed,
             &base_s, &before_s, &after_s, &agent_s, &report_s,
             fail_to_pass_tests, pass_to_pass_tests,
             base_path, before_path, after_path, file_paths,
@@ -463,10 +457,6 @@ impl LogParser {
 
     fn perform_rule_checks(
         &self,
-        base_parsed: &ParsedLog,
-        before_parsed: &ParsedLog,
-        after_parsed: &ParsedLog,
-        agent_parsed: Option<&ParsedLog>,
         base_s: &HashMap<String, String>,
         before_s: &HashMap<String, String>,
         after_s: &HashMap<String, String>,
@@ -906,7 +896,7 @@ fn detect_same_file_duplicates(raw_content: &str) -> Vec<String> {
 
     let mut out = vec![];
     let mut by_name: HashMap<String, Vec<Occur>> = HashMap::new();
-    for (file, occs) in per_file {
+    for (_file, occs) in per_file {
         for o in occs { by_name.entry(o.test_name.clone()).or_default().push(o); }
     }
     for (name, list) in by_name {

@@ -278,15 +278,15 @@ pub fn ReportCheckerInterface(
                                                 <div class="p-0 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
                                                     <div class="text-red-700 dark:text-red-300">{rule.description}</div>
                                                 </div>
-                                            }).collect_view()}
+                                            }).collect_view()}.into_any()
                                         </div>
-                                    }
+                                    }.into_any()
                                 } else {
                                     view! {
                                         <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
                                             <div></div>
                                         </div>
-                                    }
+                                    }.into_any()
                                 }
                             }}
                         </div>

@@ -162,7 +162,7 @@ fn parse_nextest_log(text: &str) -> ParsedLog {
     let lines: Vec<&str> = text.lines().collect();
 
     // Parse nextest format using separate regex patterns for better accuracy
-    for (i, line) in lines.iter().enumerate() {
+    for (_i, line) in lines.iter().enumerate() {
         // Parse PASS lines
         if let Some(captures) = NEXTEST_PASS_RE.captures(line) {
             let test_name = captures.get(1).unwrap().as_str().trim().to_string();

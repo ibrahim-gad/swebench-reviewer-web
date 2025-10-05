@@ -2,8 +2,6 @@ use anyhow::{Result, anyhow};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "ssr")]
 use jsonwebtoken::{encode, EncodingKey, Header, Algorithm};
 
 #[derive(Debug, Deserialize)]

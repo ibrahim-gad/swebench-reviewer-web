@@ -1,17 +1,10 @@
-#[cfg(feature = "ssr")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "ssr")]
 use std::fs;
-#[cfg(feature = "ssr")]
 use tempfile::TempDir;
-#[cfg(feature = "ssr")]
 use axum::{Json, response::Response, body::Body};
-#[cfg(feature = "ssr")]
 use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_contents};
-#[cfg(feature = "ssr")]
 use crate::auth::get_access_token;
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FileInfo {
     pub id: String,
@@ -19,35 +12,30 @@ pub struct FileInfo {
     pub path: String,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct ValidationResult {
     pub files_to_download: Vec<FileInfo>,
     pub folder_id: String,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct DownloadResult {
     pub temp_directory: String,
     pub downloaded_files: Vec<FileInfo>,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct ValidateRequest {
     pub folder_link: String,
     pub programming_language: String,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct DownloadRequest {
     pub files_to_download: Vec<FileInfo>,
     pub folder_id: String,
 }
 
-#[cfg(feature = "ssr")]
 async fn validate_cached_folder(
     folder_id: &str,
     instance_name: &str,
@@ -144,7 +132,6 @@ async fn validate_cached_folder(
     })
 }
 
-#[cfg(feature = "ssr")]
 fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
     let mut files = Vec::new();
     
@@ -170,7 +157,6 @@ fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
     files
 }
 
-#[cfg(feature = "ssr")]
 async fn validate_deliverable_impl(
     payload: ValidateRequest,
 ) -> Result<ValidationResult, String> {
@@ -350,11 +336,9 @@ async fn validate_deliverable_impl(
     })
 }
 
-#[cfg(feature = "ssr")]
 async fn download_deliverable_impl(
     payload: DownloadRequest,
 ) -> Result<DownloadResult, String> {
-    #[cfg(feature = "ssr")]
     use reqwest::header::AUTHORIZATION;
 
     let access_token = get_access_token()
@@ -493,7 +477,6 @@ async fn download_deliverable_impl(
 }
 
 // API endpoint handlers
-#[cfg(feature = "ssr")]
 pub async fn validate_deliverable(
     Json(payload): Json<ValidateRequest>,
 ) -> Response {
@@ -510,7 +493,6 @@ pub async fn validate_deliverable(
     }
 }
 
-#[cfg(feature = "ssr")]
 pub async fn download_deliverable(
     Json(payload): Json<DownloadRequest>,
 ) -> Response {

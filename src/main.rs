@@ -7,7 +7,9 @@ async fn main() {
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use swe_reviewer_web::app::*;
-    use swe_reviewer_web::api::{validate_deliverable, download_deliverable, get_file_content_endpoint, get_test_lists_endpoint, search_logs_endpoint, analyze_logs_endpoint};
+    use swe_reviewer_web::api::deliverable::{validate_deliverable, download_deliverable};
+    use swe_reviewer_web::api::file_operations::{get_file_content_endpoint, get_test_lists_endpoint};
+    use swe_reviewer_web::api::log_analysis::{search_logs_endpoint, analyze_logs_endpoint};
     use swe_reviewer_web::auth::init_service_account_auth;
 
     // Initialize service account authentication

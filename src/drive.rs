@@ -1,4 +1,3 @@
-#[cfg(feature = "ssr")]
 use reqwest::header::AUTHORIZATION;
 use anyhow::{Result, anyhow};
 

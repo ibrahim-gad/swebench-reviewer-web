@@ -1,29 +1,23 @@
-#[cfg(feature = "ssr")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "ssr")]
 use axum::{Json, response::Response, body::Body};
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct GetFileContentRequest {
     pub file_type: String,
     pub file_paths: Vec<String>,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct GetTestListsRequest {
     pub file_paths: Vec<String>,
 }
 
-#[cfg(feature = "ssr")]
 #[derive(Serialize, Deserialize)]
 pub struct TestLists {
     pub fail_to_pass: Vec<String>,
     pub pass_to_pass: Vec<String>,
 }
 
-#[cfg(feature = "ssr")]
 pub fn get_file_content(file_type: String, file_paths: Vec<String>) -> Result<String, String> {
     use std::fs;
     
@@ -55,7 +49,6 @@ pub fn get_file_content(file_type: String, file_paths: Vec<String>) -> Result<St
     Ok(format!("No {} file found in the provided paths", file_type))
 }
 
-#[cfg(feature = "ssr")]
 pub fn get_test_lists(file_paths: Vec<String>) -> Result<TestLists, String> {
     use std::fs;
     
@@ -93,7 +86,6 @@ pub fn get_test_lists(file_paths: Vec<String>) -> Result<TestLists, String> {
 }
 
 // API endpoint handlers
-#[cfg(feature = "ssr")]
 pub async fn get_file_content_endpoint(
     Json(payload): Json<GetFileContentRequest>,
 ) -> Response {
@@ -110,7 +102,6 @@ pub async fn get_file_content_endpoint(
     }
 }
 
-#[cfg(feature = "ssr")]
 pub async fn get_test_lists_endpoint(
     Json(payload): Json<GetTestListsRequest>,
 ) -> Response {
