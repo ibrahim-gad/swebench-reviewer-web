@@ -4,6 +4,7 @@ module.exports = {
     "./src/**/*.rs",
     "./style/**/*.{css,scss,sass}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {},
   },

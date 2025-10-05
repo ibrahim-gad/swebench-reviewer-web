@@ -4,6 +4,7 @@ use leptos_router::{
     components::{Route, Router, Routes},
     ParamSegment, StaticSegment,
 };
+use crate::components::ThemeToggle;
 
 use crate::app::types::ProcessingResult;
 
@@ -75,14 +76,16 @@ pub fn MainApp() -> impl IntoView {
                             </h1>
                         </div>
                         <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
-                        <span class="text-xl font-black text-gray-700 dark:text-white">
-                            {move || current_deliverable.get().map_or(String::new(), |d| match d.instance_id {
-                                id if !id.is_empty() => format!("[{}]", id),
-                                _ => String::new()
-                            }) }
-                        </span>
+                            <span class="text-xl font-black text-gray-700 dark:text-white">
+                                {move || current_deliverable.get().map_or(String::new(), |d| match d.instance_id {
+                                    id if !id.is_empty() => format!("[{}]", id),
+                                    _ => String::new()
+                                }) }
+                            </span>
                         </Show>
-                        <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
+                        
+                        <div class="flex items-center">
+                        <Show when=move || current_deliverable.get().is_some()>
                             <div class="flex items-center space-x-2">
                                 <a 
                                     href=move || current_deliverable.get().map_or(String::new(), |d| d.deliverable_link.clone())
@@ -150,6 +153,8 @@ pub fn MainApp() -> impl IntoView {
                                 </Show>
                             </div>
                         </Show>
+                                    <ThemeToggle/>
+                                </div>
                     </div>
                 </div>
             </div>
