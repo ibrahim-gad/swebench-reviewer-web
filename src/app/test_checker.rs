@@ -1,7 +1,6 @@
 use leptos::prelude::*;
 use std::collections::HashMap;
 use super::types::{LogSearchResults, LogAnalysisResult, TestStatus};
-use crate::components::language_selector::ProgrammingLanguage;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleViolationInfo {
@@ -32,7 +31,6 @@ pub fn TestChecker(
     search_for_test: impl Fn(String) + Send + Sync + 'static + Copy,
     _search_results: RwSignal<LogSearchResults>,
     _search_result_indices: RwSignal<HashMap<String, usize>>,
-    selected_language: RwSignal<ProgrammingLanguage>,
     log_analysis_result: RwSignal<Option<LogAnalysisResult>>,
     _log_analysis_loading: RwSignal<bool>,
 ) -> impl IntoView {
@@ -197,19 +195,19 @@ pub fn TestChecker(
                 let base_status = stage_statuses.get("base")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 let before_status = stage_statuses.get("before")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 let after_status = stage_statuses.get("after")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 statuses.insert(
@@ -236,19 +234,19 @@ pub fn TestChecker(
                 let base_status = stage_statuses.get("base")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 let before_status = stage_statuses.get("before")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 let after_status = stage_statuses.get("after")
                     .and_then(|s| s.as_ref())
                     .map(|s| s.status.as_str())
-                    .unwrap_or("missing")
+                    .unwrap_or("ignored")
                     .to_string();
                 
                 statuses.insert(
@@ -298,7 +296,7 @@ pub fn TestChecker(
 
     // Refactored helper function to render status row using precomputed statuses - updated to include violations
     let render_status_row = move |test_name: String, test_type: &str| {
-        if selected_language.get() == ProgrammingLanguage::Rust {
+        if true {
             let statuses_map = if test_type == "fail_to_pass" {
                 &fail_to_pass_statuses.get()
             } else {

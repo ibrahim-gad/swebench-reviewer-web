@@ -1,12 +1,10 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use crate::components::language_selector::ProgrammingLanguage;
 use super::types::{ValidationResult, DownloadResult, ProcessingResult, ProcessingStage, StageStatus};
 use std::collections::HashMap;
 
 pub fn handle_submit(
     deliverable_link: RwSignal<String>,
-    selected_language: RwSignal<ProgrammingLanguage>,
     is_processing: RwSignal<bool>,
     current_stage: RwSignal<Option<ProcessingStage>>,
     stages: RwSignal<HashMap<ProcessingStage, StageStatus>>,
@@ -41,7 +39,7 @@ pub fn handle_submit(
                 let resp = gloo_net::http::Request::post("/api/validate")
                     .json(&serde_json::json!({ 
                         "folder_link": link,
-                        "programming_language": selected_language.get().as_str()
+                        "programming_language": "rust".to_string()
                     }))
                     .unwrap()
                     .send()

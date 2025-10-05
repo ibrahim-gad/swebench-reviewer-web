@@ -4,12 +4,11 @@ use super::types::{LogSearchResults, FileContents, LogAnalysisResult};
 use super::test_checker::TestChecker;
 use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
 use super::file_viewer::FileViewer;
-use crate::components::language_selector::ProgrammingLanguage;
 use super::types::LoadedFileTypes;
 use super::test_checker::RuleViolationInfo;
 
 #[component]
-pub fn ReportCheckerInterface(
+pub fn DeliverableCheckerInterface(
     fail_to_pass_tests: RwSignal<Vec<String>>,
     pass_to_pass_tests: RwSignal<Vec<String>>,
     current_selection: RwSignal<String>,
@@ -25,7 +24,6 @@ pub fn ReportCheckerInterface(
     file_contents: RwSignal<FileContents>,
     loading_files: RwSignal<bool>,
     reset_state: impl Fn() + Send + Sync + 'static + Copy,
-    selected_language: RwSignal<ProgrammingLanguage>,
     log_analysis_result: RwSignal<Option<LogAnalysisResult>>,
     log_analysis_loading: RwSignal<bool>,
     loaded_file_types: RwSignal<LoadedFileTypes>,
@@ -174,7 +172,7 @@ pub fn ReportCheckerInterface(
                                 <div class="flex items-center gap-2">
                                     <span>"Tests Checker"</span>
                                     <Show
-                                        when=move || selected_language.get() == ProgrammingLanguage::Rust && log_analysis_loading.get()
+                                        when=move || log_analysis_loading.get()
                                         fallback=|| view! { <div></div> }
                                     >
                                         <div class="w-4 h-4">
@@ -278,15 +276,15 @@ pub fn ReportCheckerInterface(
                                                 <div class="p-0 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
                                                     <div class="text-red-700 dark:text-red-300">{rule.description}</div>
                                                 </div>
-                                            }).collect_view()}.into_any()
+                                            }).collect_view()}
                                         </div>
-                                    }.into_any()
+                                    }
                                 } else {
                                     view! {
                                         <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
                                             <div></div>
                                         </div>
-                                    }.into_any()
+                                    }
                                 }
                             }}
                         </div>
@@ -312,7 +310,6 @@ pub fn ReportCheckerInterface(
                                 search_for_test=search_for_test
                                 _search_results=search_results
                                 _search_result_indices=search_result_indices
-                                selected_language=selected_language
                                 log_analysis_result=log_analysis_result
                                 _log_analysis_loading=log_analysis_loading
                             />

@@ -143,7 +143,7 @@ pub async fn analyze_logs_endpoint(
     let main_json_path = payload.file_paths.iter()
         .find(|path| path.to_lowercase().contains("main.json") || path.to_lowercase().contains("main/"));
     
-    let (fail_to_pass_tests, pass_to_pass_tests) = if let Some(path) = main_json_path {
+    let (fail_to_pass_tests, pass_to_pass_tests, language) = if let Some(path) = main_json_path {
         match fs::read_to_string(path) {
             Ok(content) => {
                 match serde_json::from_str::<serde_json::Value>(&content) {
@@ -163,21 +163,24 @@ pub async fn analyze_logs_endpoint(
                             .filter_map(|v| v.as_str())
                             .map(|s| s.to_string())
                             .collect();
-                        
-                        (fail_to_pass, pass_to_pass)
+                        let language = main_json.get("language")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string().to_lowercase())
+                            .unwrap_or(String::from("rust"));
+                        (fail_to_pass, pass_to_pass, language)
                     },
-                    Err(_) => (vec![], vec![]),
+                    Err(_) => (vec![], vec![], String::from("rust")),
                 }
             },
-            Err(_) => (vec![], vec![]),
+            Err(_) => (vec![], vec![], String::from("rust")),
         }
     } else {
-        (vec![], vec![])
+        (vec![], vec![], String::from("rust"))
     };
     
     // Create log checker and analyze logs
     let log_checker = LogParser::new();
-    match log_checker.analyze_logs(&payload.file_paths, "rust", &fail_to_pass_tests, &pass_to_pass_tests) {
+    match log_checker.analyze_logs(&payload.file_paths, &language, &fail_to_pass_tests, &pass_to_pass_tests) {
         Ok(analysis_result) => {
             Response::builder()
                 .status(200)
