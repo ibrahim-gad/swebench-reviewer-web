@@ -33,11 +33,6 @@ pub fn DeliverableCheckerInterface(
     let navigate_fn = use_navigate();
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let input_tab_active = move || active_main_tab.get() == "input";
-
-    // Use RwSignal::new instead of deprecated create_rw_signal
-    let selected_violations = RwSignal::new(Vec::<super::test_checker::RuleViolationInfo>::new());
-
-    // Helper function to get violations for selected test - fix string comparisons
     let get_selected_test_violations = move || -> Vec<RuleViolationInfo> {
         let analysis = log_analysis_result.get();
         if let Some(analysis) = analysis {

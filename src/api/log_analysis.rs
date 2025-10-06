@@ -1,11 +1,5 @@
-use serde::{Deserialize, Serialize};
-use axum::{Json, response::Response, body::Body};
-use crate::app::types::{LogSearchResults, SearchResult};
+use crate::app::types::{LogAnalysisResult, LogSearchResults, SearchResult};
 
-#[derive(Serialize, Deserialize)]
-pub struct AnalyzeLogsRequest {
-    pub file_paths: Vec<String>,
-}
 
 pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSearchResults, String> {
     let base_log = file_paths.iter().find(|path| path.to_lowercase().contains("base.log"));
@@ -97,14 +91,14 @@ fn get_search_terms(test_name: &str) -> Vec<String> {
 }
 
 
-pub async fn analyze_logs_endpoint(
-    Json(payload): Json<AnalyzeLogsRequest>,
-) -> Response {
+pub fn analyze_logs(
+    file_paths: Vec<String>,
+) -> Result<LogAnalysisResult, String> {
     use crate::api::log_parser::LogParser;
     use std::fs;
     
     // Find main.json to get test lists
-    let main_json_path = payload.file_paths.iter()
+    let main_json_path = file_paths.iter()
         .find(|path| path.to_lowercase().contains("main.json") || path.to_lowercase().contains("main/"));
     
     let (fail_to_pass_tests, pass_to_pass_tests, language) = if let Some(path) = main_json_path {
@@ -142,22 +136,7 @@ pub async fn analyze_logs_endpoint(
         (vec![], vec![], String::from("rust"))
     };
     
-    // Create log checker and analyze logs
     let log_checker = LogParser::new();
-    match log_checker.analyze_logs(&payload.file_paths, &language, &fail_to_pass_tests, &pass_to_pass_tests) {
-        Ok(analysis_result) => {
-            Response::builder()
-                .status(200)
-                .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_string(&analysis_result).unwrap()))
-                .unwrap()
-        },
-        Err(error) => {
-            Response::builder()
-                .status(400)
-                .body(Body::from(error))
-                .unwrap()
-        }
-    }
+    log_checker.analyze_logs(&file_paths, &language, &fail_to_pass_tests, &pass_to_pass_tests)
 }
 

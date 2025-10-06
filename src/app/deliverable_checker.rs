@@ -19,6 +19,11 @@ use leptos::task::spawn_local;
 struct DeliverableCheckerParams {
     deliverable_id: Option<String>,
 }
+#[server]
+pub async fn handle_analyze_logs(file_paths: Vec<String>) -> Result<LogAnalysisResult, ServerFnError> {
+    use crate::api::log_analysis::{analyze_logs};
+    Ok(analyze_logs(file_paths).unwrap())
+}
 
 #[component]
 pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingResult>>) -> impl IntoView {
@@ -47,29 +52,24 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
     let result = RwSignal::new(None::<ProcessingResult>);
     let error = RwSignal::new(None::<String>);
 
-    // Analysis processing state
     let log_analysis_result = RwSignal::new(None::<LogAnalysisResult>);
     let log_analysis_loading = RwSignal::new(false);
     
-    // Additional state for the full Report Checker functionality
     let active_tab = RwSignal::new("base".to_string());
     let active_main_tab = RwSignal::new("manual_checker".to_string());
     let file_contents = RwSignal::new(FileContents::default());
     let loading_files = RwSignal::new(false);
     let loaded_file_types = RwSignal::new(LoadedFileTypes::default());
     
-    // Manual checker state
     let fail_to_pass_tests = RwSignal::new(Vec::<String>::new());
     let pass_to_pass_tests = RwSignal::new(Vec::<String>::new());
     let selected_fail_to_pass_index = RwSignal::new(0usize);
     let selected_pass_to_pass_index = RwSignal::new(0usize);
     let current_selection = RwSignal::new("fail_to_pass".to_string());
     
-    // Filter state
     let fail_to_pass_filter = RwSignal::new(String::new());
     let pass_to_pass_filter = RwSignal::new(String::new());
     
-    // Search results state
     let search_results = RwSignal::new(LogSearchResults {
         base_results: Vec::new(),
         before_results: Vec::new(),
@@ -87,67 +87,27 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         });
     };
     
-    // Function to trigger log analysis when language is Rust
     let trigger_log_analysis_fn = move || {
             if let Some(processing_result) = result.get() {
                 let file_paths = processing_result.file_paths.clone();
                 leptos::logging::log!("Starting log analysis for Rust with {} files", file_paths.len());
                 
-                // Set loading state and clear previous results
                 log_analysis_loading.set(true);
                 log_analysis_result.set(None);
                 
-                // Call the API endpoint
                 spawn_local(async move {
                     leptos::logging::log!("Calling analyze_logs API endpoint...");
-                    
-                    #[cfg(feature = "hydrate")]
-                    {
-                        let resp = gloo_net::http::Request::post("/api/analyze_logs")
-                            .json(&serde_json::json!({
-                                "file_paths": file_paths
-                            }))
-                            .unwrap()
-                            .send()
-                            .await;
-                        
-                        match resp {
-                            Ok(resp) => {
-                                let is_success = resp.status() >= 200 && resp.status() < 300;
-                                
-                                if is_success {
-                                    match resp.json::<LogAnalysisResult>().await {
-                                        Ok(analysis_result) => {
-                                            leptos::logging::log!("Log analysis successful, got {} test statuses", analysis_result.test_statuses.len());
-                                            log_analysis_result.set(Some(analysis_result));
-                                        },
-                                        Err(e) => {
-                                            leptos::logging::log!("Failed to parse log analysis response: {:?}", e);
-                                            log_analysis_result.set(None);
-                                        }
-                                    }
-                                } else {
-                                    let error_text = resp.text().await.map_err(|e| format!("Error response: {}", e));
-                                    match error_text {
-                                        Ok(text) => leptos::logging::log!("Analyze logs failed: {}", text),
-                                        Err(e) => leptos::logging::log!("Analyze logs failed: {}", e),
-                                    }
-                                    log_analysis_result.set(None);
-                                }
-                            }
-                            Err(e) => {
-                                leptos::logging::log!("Analyze logs request failed: {}", e);
-                                log_analysis_result.set(None);
-                            }
+                    let resp = handle_analyze_logs(file_paths).await;
+                    match resp {
+                        Ok(analysis_result) => {
+                            leptos::logging::log!("Log analysis successful, got {} test statuses", analysis_result.test_statuses.len());
+                            log_analysis_result.set(Some(analysis_result));
+                        },
+                        Err(e) => {
+                            leptos::logging::log!("Failed to parse log analysis response: {:?}", e);
+                            log_analysis_result.set(None);
                         }
                     }
-                    
-                    #[cfg(not(feature = "hydrate"))]
-                    {
-                        leptos::logging::log!("Client-side only operation");
-                        log_analysis_result.set(None);
-                    }
-                    
                     log_analysis_loading.set(false);
                 });
             } else {
@@ -155,7 +115,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             }
     };
 
-    // Helper functions for the enhanced functionality
     let _load_file_contents_fn = move || {
         load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
     };
@@ -180,14 +139,12 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         );
     };
 
-    // New manual submit function for the button with redirect
     let manual_submit_fn = move |_| {
         let link = deliverable_link.get().trim().to_string();
         if link.is_empty() {
             return;
         }
 
-        // Simple client-side validation for Drive folder
         if link.contains("drive.google.com/drive/folders/") {
             let folder_id = link.split("folders/").nth(1)
                 .and_then(|s| s.split(|c| c == '/' || c == '?').next())
@@ -197,18 +154,13 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             if !folder_id.is_empty() && folder_id.len() >= 20 { // Basic ID length check
                 leptos::logging::log!("Manual submit: extracted folder ID {}, redirecting", folder_id);
                 
-                // Get navigate function and redirect to trigger auto-submit
                 let navigate_fn = use_navigate();
                 
-                // Brief processing state for UX
                 is_processing.set(true);
                 error.set(None);
                 result.set(None);
                 initial_deliverable_link.set(format!("https://drive.google.com/drive/folders/{}", folder_id.clone()));
-                // Navigate to the route which will trigger auto-processing
                 navigate_fn(&format!("/{}", folder_id), Default::default());
-                
-                // Reset processing state immediately - auto-submit will handle loading
                 is_processing.set(false);
             } else {
                 error.set(Some("Invalid folder ID extracted from link".to_string()));
@@ -230,7 +182,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         result.set(None);
         error.set(None);
         
-        // Reset additional state
         active_tab.set("base".to_string());
         active_main_tab.set("manual_checker".to_string());
         file_contents.set(FileContents::default());
@@ -257,7 +208,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         log_analysis_loading.set(false);
     };
 
-    // Auto-submit effect when deliverable_id is provided via route (only for initial route value)
     Effect::new(move |_| {
         let link = deliverable_link.get();
         let initial_link = initial_deliverable_link.get();
@@ -299,7 +249,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                         r.instance_id = instance_id;
                         r.task_id = task_id;
                         
-                        // Update result with new values
                         result.set(Some(r));
                     }
                 }

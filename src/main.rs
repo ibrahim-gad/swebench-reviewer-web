@@ -2,12 +2,11 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::{Router, routing::post};
+    use axum::Router;
     use leptos::logging::log;
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use swe_reviewer_web::app::*;
-    use swe_reviewer_web::api::log_analysis::{analyze_logs_endpoint};
     use swe_reviewer_web::auth::init_service_account_auth;
 
     // Initialize service account authentication
@@ -25,10 +24,6 @@ async fn main() {
     // Generate the list of routes in your Leptos App
     let routes = generate_route_list(App);
 
-    // Create API router
-    let api_router = Router::new()
-        .route("/api/analyze_logs", post(analyze_logs_endpoint));
-
     // Create main router with LeptosOptions state
     let app = Router::new()
         .leptos_routes(&leptos_options, routes, {
@@ -36,8 +31,7 @@ async fn main() {
             move || shell(leptos_options.clone())
         })
         .fallback(leptos_axum::file_and_error_handler(shell))
-        .with_state(leptos_options)
-        .merge(api_router);
+        .with_state(leptos_options);
 
     // run our app with hyper
     // `axum::Server` is a re-export of `hyper::Server`

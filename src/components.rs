@@ -1,7 +1,10 @@
 use leptos::*;
 use leptos::prelude::*;
+#[cfg(feature = "hydrate")]
 use leptos::task::spawn_local;
+#[cfg(feature = "hydrate")]
 use wasm_bindgen::JsCast;
+#[cfg(feature = "hydrate")]
 use web_sys::{window, HtmlElement};
 
 #[component]
