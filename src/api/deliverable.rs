@@ -57,6 +57,25 @@ async fn validate_cached_folder(
     if !report_path.exists() || !report_path.is_file() {
         return Err("Missing required file: report.json in results folder cache".to_string());
     }
+    let patches_path = cached_path.join("patches");
+    if !patches_path.exists() || !patches_path.is_dir() {
+        return Err("Missing required 'patches' folder in cache".to_string());
+    }
+    // make sure the patches folder has the required files
+    let possible_suffixes = vec![".diff", ".patch"];
+  
+    let has_file = std::fs::read_dir(&patches_path)
+        .map_err(|e| format!("Failed to read patches directory: {}", e))?
+        .filter_map(|entry| entry.ok())
+        .any(|entry| {
+            let file_name = entry.file_name().to_string_lossy().to_lowercase();
+            possible_suffixes.iter().any(|suffix| file_name.ends_with(suffix)) && entry.path().is_file()
+        });
+
+    if !has_file {
+        return Err(format!("Missing required patch file ending with: {} in cache", possible_suffixes.join(", ")));
+    }
+
 
     let mut files_to_download = Vec::new();
 
@@ -81,7 +100,18 @@ async fn validate_cached_folder(
             });
         }
     }
-
+    let patches_files = std::fs::read_dir(&patches_path)
+    .map_err(|e| format!("Failed to read patches directory: {}", e))?
+    .filter_map(|entry| entry.ok())
+    .filter(|entry| entry.path().is_file())
+    .collect::<Vec<_>>();
+for patch_file in patches_files {
+    files_to_download.push(FileInfo {
+        id: "cached".to_string(),
+        name: patch_file.file_name().to_string_lossy().to_string(),
+        path: format!("patches/{}", patch_file.file_name().to_string_lossy()),
+    });
+}
     files_to_download.push(FileInfo {
         id: "cached".to_string(),
         name: "report.json".to_string(),
@@ -289,7 +319,31 @@ pub async fn validate_deliverable_impl(
         name: report_file["name"].as_str().unwrap_or("").to_string(),
         path: format!("results/{}", report_file["name"].as_str().unwrap_or("")),
     });
-
+    let patches_folder = files.iter().find(|file| {
+        let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+        file_name == "patches" &&
+        file["mimeType"].as_str() == Some("application/vnd.google-apps.folder")
+    });
+    let patches_folder_id = match patches_folder {
+        Some(folder) => folder["id"].as_str().ok_or("Invalid patches folder ID")?,
+        None => return Err("Missing required 'patches' folder (case insensitive search)".to_string()),
+    };
+    let patches_contents = get_folder_contents(patches_folder_id, &access_token).await
+        .map_err(|e| format!("Failed to get patches folder contents: {}", e))?;
+    let patches_files = patches_contents["files"].as_array()
+        .ok_or("Invalid patches folder contents response")?;
+    for diff_file in patches_files.iter().filter(|file| {
+        let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+        (file_name.ends_with(".diff") || file_name.ends_with(".patch")) &&
+        file["mimeType"].as_str() != Some("application/vnd.google-apps.folder")
+    }) {
+        println!("Found diff file: {}, adding to download list", diff_file["name"].as_str().unwrap_or(""));
+        files_to_download.push(FileInfo {
+            id: diff_file["id"].as_str().unwrap_or("").to_string(),
+            name: diff_file["name"].as_str().unwrap_or("").to_string(),
+            path: format!("patches/{}", diff_file["name"].as_str().unwrap_or("")),
+        });
+    }
     Ok(ValidationResult {
         files_to_download,
         folder_id: folder_id.to_string(),
