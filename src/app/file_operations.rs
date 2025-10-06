@@ -2,6 +2,12 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use super::types::{FileContents, FileContent, ProcessingResult, LoadedFileTypes};
 
+#[server]
+pub async fn handle_get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<String, ServerFnError> {
+    use crate::api::file_operations::{get_file_contents};
+    Ok(get_file_contents(file_type, file_paths).unwrap())
+}
+
 pub fn load_file_contents(
     result: RwSignal<Option<ProcessingResult>>,
     file_contents: RwSignal<FileContents>,
@@ -38,38 +44,26 @@ pub fn load_file_contents(
         
         for &file_type in &to_load {
             let _file_type = file_type;
-            #[cfg(feature = "hydrate")]
-            if let Ok(response) = gloo_net::http::Request::post("/api/get_file_content")
-                .json(&serde_json::json!({
-                    "file_type": file_type,
-                    "file_paths": result_data.file_paths.clone()
-                }))
-                .unwrap()
-                .send()
-                .await
-            {
-                if response.ok() {
-                    if let Ok(content) = response.text().await {
-                        let is_json_type = matches!(file_type, "main_json" | "report")
-                            || file_type.contains("json");
-                        let file_content = FileContent {
-                            content,
-                            file_type: if is_json_type { "json" } else { "text" }.to_string(),
-                        };
-                        
-                        match file_type {
-                            "base" => contents.base = Some(file_content),
-                            "before" => contents.before = Some(file_content),
-                            "after" => contents.after = Some(file_content),
-                            "agent" => contents.agent = Some(file_content),
-                            "main_json" => contents.main_json = Some(file_content),
-                            "report" => contents.report = Some(file_content),
-                            _ => {}
-                        }
-                        
-                        loaded_types.set_loaded(file_type);
-                    }
+            let content = handle_get_file_contents(file_type.to_string(), result_data.file_paths.clone()).await;
+            if let Ok(content) = content {
+                let is_json_type = matches!(file_type, "main_json" | "report")
+                    || file_type.contains("json");
+                let file_content = FileContent {
+                    content,
+                    file_type: if is_json_type { "json" } else { "text" }.to_string(),
+                };
+                
+                match file_type {
+                    "base" => contents.base = Some(file_content),
+                    "before" => contents.before = Some(file_content),
+                    "after" => contents.after = Some(file_content),
+                    "agent" => contents.agent = Some(file_content),
+                    "main_json" => contents.main_json = Some(file_content),
+                    "report" => contents.report = Some(file_content),
+                    _ => {}
                 }
+                
+                loaded_types.set_loaded(file_type);
             }
         }
         

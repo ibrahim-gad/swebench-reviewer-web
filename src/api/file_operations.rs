@@ -14,7 +14,7 @@ pub struct GetTestListsRequest {
 }
 
 
-pub fn get_file_content(file_type: String, file_paths: Vec<String>) -> Result<String, String> {
+pub fn get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<String, String> {
     use std::fs;
     
     let file_extensions = match file_type.as_str() {
@@ -79,37 +79,4 @@ pub fn get_test_lists(file_paths: Vec<String>) -> Result<TestLists, String> {
         fail_to_pass,
         pass_to_pass,
     })
-}
-
-// API endpoint handlers
-pub async fn get_file_content_endpoint(
-    Json(payload): Json<GetFileContentRequest>,
-) -> Response {
-    match get_file_content(payload.file_type, payload.file_paths) {
-        Ok(content) => Response::builder()
-            .status(200)
-            .header("Content-Type", "text/plain")
-            .body(Body::from(content))
-            .unwrap(),
-        Err(error) => Response::builder()
-            .status(400)
-            .body(Body::from(error))
-            .unwrap(),
-    }
-}
-
-pub async fn get_test_lists_endpoint(
-    Json(payload): Json<GetTestListsRequest>,
-) -> Response {
-    match get_test_lists(payload.file_paths) {
-        Ok(result) => Response::builder()
-            .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&result).unwrap()))
-            .unwrap(),
-        Err(error) => Response::builder()
-            .status(400)
-            .body(Body::from(error))
-            .unwrap(),
-    }
 }
