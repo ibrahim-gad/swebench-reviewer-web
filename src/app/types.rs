@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileInfo {
     pub id: String,
     pub name: String,
@@ -197,11 +197,4 @@ pub struct DeliverableInfo {
     pub deliverable_link: String,
     pub instance_id: String,
     pub task_id: String,
-}
-
-
-#[derive(Serialize, Deserialize)]
-pub struct ValidateRequest {
-    pub folder_link: String,
-    pub programming_language: String,
 }

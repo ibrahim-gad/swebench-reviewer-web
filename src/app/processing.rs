@@ -9,6 +9,14 @@ pub async fn handle_submit_server(deliverable_link: String) -> Result<Validation
     Ok(validate_deliverable_impl(deliverable_link).await.unwrap())
 }
 
+
+#[server]
+pub async fn handle_download_server(files_to_download: Vec<FileInfo>, folder_id: String) -> Result<DownloadResult, ServerFnError> {
+    use crate::api::deliverable::{download_deliverable_impl};
+    Ok(download_deliverable_impl(files_to_download, folder_id).await.unwrap())
+}
+
+
 pub fn handle_submit(
     deliverable_link: RwSignal<String>,
     is_processing: RwSignal<bool>,
@@ -49,42 +57,7 @@ pub fn handle_submit(
                 current_stage.set(Some(ProcessingStage::Downloading));
                 update_stage_status(ProcessingStage::Downloading, StageStatus::Active);
 
-                let download_result: Result<DownloadResult, String> = async {
-                    #[cfg(feature = "hydrate")]
-                    {
-                        let resp = gloo_net::http::Request::post("/api/download")
-                            .json(&serde_json::json!({
-                                "files_to_download": validation_data.files_to_download,
-                                "folder_id": validation_data.folder_id
-                            }))
-                            .unwrap()
-                            .send()
-                            .await;
-                        
-                        match resp {
-                            Ok(resp) => {
-                                let is_success = resp.status() >= 200 && resp.status() < 300;
-                                
-                                if is_success {
-                                    resp.json().await.map_err(|e| format!("JSON parse error: {}", e))
-                                } else {
-                                    let error_text = resp.text().await.map_err(|e| format!("Error response: {}", e));
-                                    match error_text {
-                                        Ok(text) => Err(format!("Download failed: {}", text)),
-                                        Err(e) => Err(e),
-                                    }
-                                }
-                            }
-                            Err(e) => Err(format!("Download request failed: {}", e)),
-                        }
-                    }
-                    
-                    #[cfg(not(feature = "hydrate"))]
-                    {
-                        // On SSR, this won't be called as it's a client-side action
-                        Err("Client-side only operation".to_string())
-                    }
-                }.await;
+                let download_result = handle_download_server(validation_data.files_to_download, validation_data.folder_id).await;
 
                 match download_result {
                     Ok(download_data) => {
@@ -114,7 +87,7 @@ pub fn handle_submit(
                         load_test_lists();
                     }
                     Err(e) => {
-                        error.set(Some(e));
+                        error.set(Some(e.to_string()));
                         update_stage_status(ProcessingStage::Downloading, StageStatus::Error);
                         current_stage.set(None);
                     }

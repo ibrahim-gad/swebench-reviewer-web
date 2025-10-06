@@ -1,7 +1,7 @@
 use std::fs;
 use tempfile::TempDir;
 use axum::{Json, response::Response, body::Body};
-use crate::app::types::{ValidateRequest, FileInfo, ValidationResult, DownloadResult, DownloadRequest};
+use crate::app::types::{FileInfo, ValidationResult, DownloadResult, DownloadRequest};
 use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_contents};
 use crate::auth::get_access_token;
 
@@ -95,6 +95,7 @@ async fn validate_cached_folder(
     })
 }
 
+
 fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
     let mut files = Vec::new();
     
@@ -119,6 +120,7 @@ fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
     
     files
 }
+
 
 pub async fn validate_deliverable_impl(
     folder_link: String,
@@ -295,8 +297,10 @@ pub async fn validate_deliverable_impl(
     })
 }
 
-async fn download_deliverable_impl(
-    payload: DownloadRequest,
+
+pub async fn download_deliverable_impl(
+    files_to_download: Vec<FileInfo>,
+    folder_id: String,
 ) -> Result<DownloadResult, String> {
     use reqwest::header::AUTHORIZATION;
 
@@ -312,13 +316,13 @@ async fn download_deliverable_impl(
         fs::create_dir_all(&base_temp_dir).map_err(|e| format!("Failed to create base temp dir: {}", e))?;
     }
 
-    let persist_dir = base_temp_dir.join(&payload.folder_id);
+    let persist_dir = base_temp_dir.join(&folder_id);
 
     if persist_dir.exists() {
         let mut cached_files = Vec::new();
         let mut all_files_cached = true;
         
-        for file_info in &payload.files_to_download {
+        for file_info in &files_to_download {
             let cached_file_path = persist_dir.join(&file_info.path);
             if cached_file_path.exists() {
                 cached_files.push(FileInfo {
@@ -344,9 +348,9 @@ async fn download_deliverable_impl(
     let client = reqwest::Client::new();
     
     // Store files_to_download for later use with cached files
-    let files_to_download = payload.files_to_download.clone();
+    let files_to_download = files_to_download.clone();
 
-    for file_info in payload.files_to_download {
+    for file_info in &files_to_download {
         // Skip files that are already cached (have placeholder ID)
         if file_info.id == "cached" {
             continue;
@@ -378,8 +382,8 @@ async fn download_deliverable_impl(
             .map_err(|e| format!("Failed to write file {}: {}", file_info.name, e))?;
 
         downloaded_files.push(FileInfo {
-            id: file_info.id,
-            name: file_info.name,
+            id: file_info.id.clone(),
+            name: file_info.name.clone(),
             path: file_path.to_string_lossy().to_string(),
         });
     }
@@ -435,35 +439,3 @@ async fn download_deliverable_impl(
     })
 }
 
-// API endpoint handlers
-pub async fn validate_deliverable(
-    Json(payload): Json<ValidateRequest>,
-) -> Response {
-    match validate_deliverable_impl(payload.folder_link).await {
-        Ok(result) => Response::builder()
-            .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&result).unwrap()))
-            .unwrap(),
-        Err(error) => Response::builder()
-            .status(400)
-            .body(Body::from(error))
-            .unwrap(),
-    }
-}
-
-pub async fn download_deliverable(
-    Json(payload): Json<DownloadRequest>,
-) -> Response {
-    match download_deliverable_impl(payload).await {
-        Ok(result) => Response::builder()
-            .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&result).unwrap()))
-            .unwrap(),
-        Err(error) => Response::builder()
-            .status(400)
-            .body(Body::from(error))
-            .unwrap(),
-    }
-}
