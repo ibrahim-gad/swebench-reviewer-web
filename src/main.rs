@@ -7,7 +7,7 @@ async fn main() {
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use swe_reviewer_web::app::*;
-    use swe_reviewer_web::api::log_analysis::{search_logs_endpoint, analyze_logs_endpoint};
+    use swe_reviewer_web::api::log_analysis::{analyze_logs_endpoint};
     use swe_reviewer_web::auth::init_service_account_auth;
 
     // Initialize service account authentication
@@ -27,7 +27,6 @@ async fn main() {
 
     // Create API router
     let api_router = Router::new()
-        .route("/api/search_logs", post(search_logs_endpoint))
         .route("/api/analyze_logs", post(analyze_logs_endpoint));
 
     // Create main router with LeptosOptions state

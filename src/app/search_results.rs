@@ -3,6 +3,12 @@ use leptos::task::spawn_local;
 use std::collections::HashMap;
 use super::types::{LogSearchResults, ProcessingResult};
 
+#[server]
+pub async fn handle_search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSearchResults, ServerFnError> {
+    use crate::api::log_analysis::{search_logs};
+    Ok(search_logs(file_paths, test_name).unwrap())
+}
+
 pub fn search_for_test(
     result: RwSignal<Option<ProcessingResult>>,
     test_name: String,
@@ -19,27 +25,15 @@ pub fn search_for_test(
     }
     
     spawn_local(async move {
-        #[cfg(feature = "hydrate")]
-        if let Ok(response) = gloo_net::http::Request::post("/api/search_logs")
-            .json(&serde_json::json!({
-                "file_paths": result_data.file_paths,
-                "test_name": test_name
-            }))
-            .unwrap()
-            .send()
-            .await
-        {
-            if response.ok() {
-                if let Ok(results) = response.json::<LogSearchResults>().await {
-                    search_results.set(results);
-                    search_result_indices.set(HashMap::from([
-                        ("base".to_string(), 0usize),
-                        ("before".to_string(), 0usize),
-                        ("after".to_string(), 0usize),
-                    ]));
-                }
+            let results = handle_search_logs(result_data.file_paths, test_name).await;
+            if let Ok(results) = results {
+                search_results.set(results);
+                search_result_indices.set(HashMap::from([
+                    ("base".to_string(), 0usize),
+                    ("before".to_string(), 0usize),
+                    ("after".to_string(), 0usize),
+                ]));
             }
-        }
     });
 }
 

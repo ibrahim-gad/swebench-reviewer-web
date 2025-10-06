@@ -1,30 +1,10 @@
 use serde::{Deserialize, Serialize};
 use axum::{Json, response::Response, body::Body};
-
-#[derive(Serialize, Deserialize)]
-pub struct SearchLogsRequest {
-    pub file_paths: Vec<String>,
-    pub test_name: String,
-}
+use crate::app::types::{LogSearchResults, SearchResult};
 
 #[derive(Serialize, Deserialize)]
 pub struct AnalyzeLogsRequest {
     pub file_paths: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SearchResult {
-    pub line_number: usize,
-    pub line_content: String,
-    pub context_before: Vec<String>,
-    pub context_after: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct LogSearchResults {
-    pub base_results: Vec<SearchResult>,
-    pub before_results: Vec<SearchResult>,
-    pub after_results: Vec<SearchResult>,
 }
 
 pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSearchResults, String> {
@@ -116,22 +96,6 @@ fn get_search_terms(test_name: &str) -> Vec<String> {
     search_terms
 }
 
-// API endpoint handlers
-pub async fn search_logs_endpoint(
-    Json(payload): Json<SearchLogsRequest>,
-) -> Response {
-    match search_logs(payload.file_paths, payload.test_name) {
-        Ok(result) => Response::builder()
-            .status(200)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_string(&result).unwrap()))
-            .unwrap(),
-        Err(error) => Response::builder()
-            .status(400)
-            .body(Body::from(error))
-            .unwrap(),
-    }
-}
 
 pub async fn analyze_logs_endpoint(
     Json(payload): Json<AnalyzeLogsRequest>,
