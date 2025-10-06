@@ -1,7 +1,6 @@
 use std::fs;
 use tempfile::TempDir;
-use axum::{Json, response::Response, body::Body};
-use crate::app::types::{FileInfo, ValidationResult, DownloadResult, DownloadRequest};
+use crate::app::types::{FileInfo, ValidationResult, DownloadResult};
 use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_contents};
 use crate::auth::get_access_token;
 

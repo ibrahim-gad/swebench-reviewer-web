@@ -4,14 +4,14 @@ use super::types::{ValidationResult, DownloadResult, ProcessingResult, Processin
 use std::collections::HashMap;
 
 #[server]
-pub async fn handle_submit_server(deliverable_link: String) -> Result<ValidationResult, ServerFnError> {
+pub async fn handle_validate_deliverable(deliverable_link: String) -> Result<ValidationResult, ServerFnError> {
     use crate::api::deliverable::{validate_deliverable_impl};
     Ok(validate_deliverable_impl(deliverable_link).await.unwrap())
 }
 
 
 #[server]
-pub async fn handle_download_server(files_to_download: Vec<FileInfo>, folder_id: String) -> Result<DownloadResult, ServerFnError> {
+pub async fn handle_download_deliverable(files_to_download: Vec<FileInfo>, folder_id: String) -> Result<DownloadResult, ServerFnError> {
     use crate::api::deliverable::{download_deliverable_impl};
     Ok(download_deliverable_impl(files_to_download, folder_id).await.unwrap())
 }
@@ -47,7 +47,7 @@ pub fn handle_submit(
         current_stage.set(Some(ProcessingStage::Validating));
         update_stage_status(ProcessingStage::Validating, StageStatus::Active);
 
-        let validation_result = handle_submit_server(link.clone()).await;
+        let validation_result = handle_validate_deliverable(link.clone()).await;
 
         match validation_result {
             Ok(validation_data) => {
@@ -57,18 +57,13 @@ pub fn handle_submit(
                 current_stage.set(Some(ProcessingStage::Downloading));
                 update_stage_status(ProcessingStage::Downloading, StageStatus::Active);
 
-                let download_result = handle_download_server(validation_data.files_to_download, validation_data.folder_id).await;
+                let download_result = handle_download_deliverable(validation_data.files_to_download, validation_data.folder_id).await;
 
                 match download_result {
                     Ok(download_data) => {
                         update_stage_status(ProcessingStage::Downloading, StageStatus::Completed);
 
                         let processing_result = ProcessingResult {
-                            status: "downloaded".to_string(),
-                            message: "Files downloaded successfully".to_string(),
-                            files_processed: download_data.downloaded_files.len(),
-                            issues_found: 0,
-                            score: 0,
                             file_paths: download_data.downloaded_files.iter()
                                 .map(|f| f.path.clone())
                                 .collect(),

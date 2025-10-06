@@ -27,11 +27,6 @@ pub struct DownloadResult {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProcessingResult {
-    pub status: String,
-    pub message: String,
-    pub files_processed: usize,
-    pub issues_found: usize,
-    pub score: usize,
     pub file_paths: Vec<String>,
     pub deliverable_link: String,
     pub instance_id: String,

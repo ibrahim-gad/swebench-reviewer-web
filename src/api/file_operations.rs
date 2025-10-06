@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use axum::{Json, response::Response, body::Body};
+use crate::app::types::TestLists;
 
 #[derive(Serialize, Deserialize)]
 pub struct GetFileContentRequest {
@@ -12,11 +13,6 @@ pub struct GetTestListsRequest {
     pub file_paths: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct TestLists {
-    pub fail_to_pass: Vec<String>,
-    pub pass_to_pass: Vec<String>,
-}
 
 pub fn get_file_content(file_type: String, file_paths: Vec<String>) -> Result<String, String> {
     use std::fs;
