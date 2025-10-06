@@ -29,7 +29,6 @@ async fn main() {
 
     // Create API router
     let api_router = Router::new()
-        .route("/api/validate", post(validate_deliverable))
         .route("/api/download", post(download_deliverable))
         .route("/api/get_file_content", post(get_file_content_endpoint))
         .route("/api/get_test_lists", post(get_test_lists_endpoint))

@@ -1,7 +1,13 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use super::types::{ValidationResult, DownloadResult, ProcessingResult, ProcessingStage, StageStatus};
+use super::types::{ValidationResult, DownloadResult, ProcessingResult, ProcessingStage, StageStatus, FileInfo};
 use std::collections::HashMap;
+
+#[server]
+pub async fn handle_submit_server(deliverable_link: String) -> Result<ValidationResult, ServerFnError> {
+    use crate::api::deliverable::{validate_deliverable_impl};
+    Ok(validate_deliverable_impl(deliverable_link).await.unwrap())
+}
 
 pub fn handle_submit(
     deliverable_link: RwSignal<String>,
@@ -33,42 +39,7 @@ pub fn handle_submit(
         current_stage.set(Some(ProcessingStage::Validating));
         update_stage_status(ProcessingStage::Validating, StageStatus::Active);
 
-        let validation_result: Result<ValidationResult, String> = async {
-            #[cfg(feature = "hydrate")]
-            {
-                let resp = gloo_net::http::Request::post("/api/validate")
-                    .json(&serde_json::json!({ 
-                        "folder_link": link,
-                        "programming_language": "rust".to_string()
-                    }))
-                    .unwrap()
-                    .send()
-                    .await;
-                
-                match resp {
-                    Ok(resp) => {
-                        let is_success = resp.status() >= 200 && resp.status() < 300;
-                        
-                        if is_success {
-                            resp.json().await.map_err(|e| format!("JSON parse error: {}", e))
-                        } else {
-                            let error_text = resp.text().await.map_err(|e| format!("Error response: {}", e));
-                            match error_text {
-                                Ok(text) => Err(format!("Validation failed: {}", text)),
-                                Err(e) => Err(e),
-                            }
-                        }
-                    }
-                    Err(e) => Err(format!("Validation request failed: {}", e)),
-                }
-            }
-            
-            #[cfg(not(feature = "hydrate"))]
-            {
-                // On SSR, this won't be called as it's a client-side action
-                Err("Client-side only operation".to_string())
-            }
-        }.await;
+        let validation_result = handle_submit_server(link.clone()).await;
 
         match validation_result {
             Ok(validation_data) => {
@@ -150,7 +121,7 @@ pub fn handle_submit(
                 }
             }
             Err(e) => {
-                error.set(Some(e));
+                error.set(Some(e.to_string()));
                 update_stage_status(ProcessingStage::Validating, StageStatus::Error);
                 current_stage.set(None);
                 is_processing.set(false);

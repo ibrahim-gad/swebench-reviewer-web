@@ -13,6 +13,12 @@ pub struct ValidationResult {
     pub folder_id: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct DownloadRequest {
+    pub files_to_download: Vec<FileInfo>,
+    pub folder_id: String,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DownloadResult {
     pub temp_directory: String,
@@ -191,4 +197,11 @@ pub struct DeliverableInfo {
     pub deliverable_link: String,
     pub instance_id: String,
     pub task_id: String,
+}
+
+
+#[derive(Serialize, Deserialize)]
+pub struct ValidateRequest {
+    pub folder_link: String,
+    pub programming_language: String,
 }

@@ -1,47 +1,16 @@
-use serde::{Deserialize, Serialize};
 use std::fs;
 use tempfile::TempDir;
 use axum::{Json, response::Response, body::Body};
+use crate::app::types::{ValidateRequest, FileInfo, ValidationResult, DownloadResult, DownloadRequest};
 use crate::drive::{extract_drive_folder_id, get_folder_metadata, get_folder_contents};
 use crate::auth::get_access_token;
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FileInfo {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ValidationResult {
-    pub files_to_download: Vec<FileInfo>,
-    pub folder_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct DownloadResult {
-    pub temp_directory: String,
-    pub downloaded_files: Vec<FileInfo>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ValidateRequest {
-    pub folder_link: String,
-    pub programming_language: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct DownloadRequest {
-    pub files_to_download: Vec<FileInfo>,
-    pub folder_id: String,
-}
 
 async fn validate_cached_folder(
     folder_id: &str,
     instance_name: &str,
     cached_path: &std::path::Path,
 ) -> Result<ValidationResult, String> {
-    // Check if all required files exist in the cached folder
     let instance_json_name = format!("{}.json", instance_name);
     let instance_json_path = cached_path.join("main").join(&instance_json_name);
     
@@ -53,7 +22,6 @@ async fn validate_cached_folder(
         ));
     }
 
-    // Check logs folder and required log files
     let logs_path = cached_path.join("logs");
     if !logs_path.exists() || !logs_path.is_dir() {
         return Err("Missing required 'logs' folder in cache".to_string());
@@ -81,7 +49,6 @@ async fn validate_cached_folder(
         }
     }
 
-    // Check results folder and report.json
     let results_path = cached_path.join("results");
     if !results_path.exists() || !results_path.is_dir() {
         return Err("Missing required 'results' folder in cache".to_string());
@@ -92,17 +59,14 @@ async fn validate_cached_folder(
         return Err("Missing required file: report.json in results folder cache".to_string());
     }
 
-    // Build files_to_download list from cached files
     let mut files_to_download = Vec::new();
 
-    // Add instance JSON file
     files_to_download.push(FileInfo {
-        id: "cached".to_string(), // Use placeholder ID for cached files
+        id: "cached".to_string(),
         name: instance_json_name.clone(),
         path: format!("main/{}", instance_json_name),
     });
 
-    // Add log files
     for suffix in &required_suffixes {
         if let Some(log_file) = std::fs::read_dir(&logs_path)
             .map_err(|e| format!("Failed to read logs directory: {}", e))?
@@ -119,7 +83,6 @@ async fn validate_cached_folder(
         }
     }
 
-    // Add report.json
     files_to_download.push(FileInfo {
         id: "cached".to_string(),
         name: "report.json".to_string(),
@@ -157,10 +120,10 @@ fn get_cached_file_list(cached_path: &std::path::Path) -> Vec<String> {
     files
 }
 
-async fn validate_deliverable_impl(
-    payload: ValidateRequest,
+pub async fn validate_deliverable_impl(
+    folder_link: String,
 ) -> Result<ValidationResult, String> {
-    let folder_id = extract_drive_folder_id(&payload.folder_link)
+    let folder_id = extract_drive_folder_id(&folder_link)
         .ok_or("Invalid Google Drive folder link. Please provide a valid folder URL.")?;
 
     // Check if we have a cached folder first
@@ -170,7 +133,6 @@ async fn validate_deliverable_impl(
     let persist_dir = base_temp_dir.join(&folder_id);
 
     if persist_dir.exists() {
-        // Try to validate against cached folder first
         let access_token = get_access_token()
             .await
             .map_err(|e| format!("Failed to get access token: {}", e))?;
@@ -185,11 +147,9 @@ async fn validate_deliverable_impl(
 
         match validate_cached_folder(&folder_id, instance_name, &persist_dir).await {
             Ok(result) => {
-                // Cached validation succeeded, return the result
                 return Ok(result);
             }
             Err(cached_error) => {
-                // Cached validation failed, remove the cache and fall back to remote validation
                 eprintln!("Cached validation failed: {}. Removing cache and retrying with remote validation.", cached_error);
                 if let Err(remove_error) = std::fs::remove_dir_all(&persist_dir) {
                     eprintln!("Warning: Failed to remove cached folder: {}", remove_error);
@@ -198,7 +158,6 @@ async fn validate_deliverable_impl(
         }
     }
 
-    // Fall back to remote validation
     let access_token = get_access_token()
         .await
         .map_err(|e| format!("Failed to get access token: {}", e))?;
@@ -480,7 +439,7 @@ async fn download_deliverable_impl(
 pub async fn validate_deliverable(
     Json(payload): Json<ValidateRequest>,
 ) -> Response {
-    match validate_deliverable_impl(payload).await {
+    match validate_deliverable_impl(payload.folder_link).await {
         Ok(result) => Response::builder()
             .status(200)
             .header("Content-Type", "application/json")
