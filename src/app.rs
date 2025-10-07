@@ -18,6 +18,7 @@ pub mod test_checker;
 pub mod log_search_results;
 pub mod deliverable_checker_interface;
 pub mod deliverable_checker;
+pub mod playground;
 use deliverable_checker::{DeliverableCheckerPage, DeliverableCheckerPageProps};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -130,7 +131,8 @@ pub fn MainApp() -> impl IntoView {
                                         href=move || {
                                             if let Some(d) = current_deliverable.get() {
                                                 if let Some(id) = d.task_id.split('#').last() {
-                                                    format!("https://github.com/swe-bench/SWE-bench/issues/{}", id)
+                                                    let repo = if !d.repo.is_empty() { d.repo.clone() } else { "swe-bench/SWE-bench".to_string() };
+                                                    format!("https://github.com/{}/issues/{}", repo, id)
                                                 } else { String::new() }
                                             } else { String::new() }
                                         }
@@ -155,7 +157,8 @@ pub fn MainApp() -> impl IntoView {
                                         href=move || {
                                             if let Some(d) = current_deliverable.get() {
                                                 if let Some(id) = d.instance_id.split('-').last() {
-                                                    format!("https://github.com/swe-bench/SWE-bench/pull/{}", id)
+                                                    let repo = if !d.repo.is_empty() { d.repo.clone() } else { "swe-bench/SWE-bench".to_string() };
+                                                    format!("https://github.com/{}/pull/{}", repo, id)
                                                 } else { String::new() }
                                             } else { String::new() }
                                         }

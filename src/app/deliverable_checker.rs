@@ -241,9 +241,35 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&main_json.content) {
                         let instance_id = json.get("instance_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
                         let task_id = json.get("task_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        let repo = json.get("repo").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        let problem_statement = json.get("problem_statement").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        let conversation: Vec<super::types::ConversationEntry> = json
+                            .get("conversation")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        let gold_patch = json.get("gold_patch").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+                        let test_patch = json.get("test_patch").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
                         
                         r.instance_id = instance_id;
                         r.task_id = task_id;
+                        r.repo = repo;
+                        r.problem_statement = problem_statement;
+                        r.conversation = conversation;
+                        r.gold_patch = gold_patch;
+                        r.test_patch = test_patch;
+                        // Persist parsed identifiers for convenience
+                        r.pr_id = r
+                            .instance_id
+                            .split('-')
+                            .last()
+                            .unwrap_or("")
+                            .to_string();
+                        r.issue_id = r
+                            .task_id
+                            .split('#')
+                            .last()
+                            .unwrap_or("")
+                            .to_string();
                         r.language = json.get("language").and_then(|v| v.as_str()).map(|s| s.to_string().to_lowercase()).unwrap_or_default();
                         result.set(Some(r));
                     }

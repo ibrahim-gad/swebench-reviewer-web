@@ -32,6 +32,7 @@ pub fn DeliverableCheckerInterface(
 ) -> impl IntoView {
     let navigate_fn = use_navigate();
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
+    let playground_tab_active = move || active_main_tab.get() == "playground";
     let input_tab_active = move || active_main_tab.get() == "input";
     let get_selected_test_violations = move || -> Vec<RuleViolationInfo> {
         let analysis = log_analysis_result.get();
@@ -134,9 +135,9 @@ pub fn DeliverableCheckerInterface(
     
     view! {
         <div class="flex flex-col h-full overflow-hidden">
-            <div class="flex-none bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1 shadow-sm mb-1">
+            <div class="flex-row flex justify-between bg-white dark:bg-gray-800 h-12 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1 shadow-sm mb-1">
                 // Single line with back button, centered title, and copy functionality
-                <div class="flex items-center justify-between gap-4 relative">
+                <div class="flex flex-row items-center justify-between gap-4 w-full relative">
                     // Back button - now navigates to root
                     <button
                         on:click=move |_| {
@@ -152,7 +153,7 @@ pub fn DeliverableCheckerInterface(
                     </button>
 
                     // Title - Centered
-                    <div class="flex justify-center absolute left-1/2 transform -translate-x-1/2">
+                        <div class="flex justify-center absolute left-1/2 transform -translate-x-1/2">
                         <div class="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded">
                             <button
                                 on:click=move |_| {
@@ -160,10 +161,10 @@ pub fn DeliverableCheckerInterface(
                                 }
                                 class=move || {
                                     if manual_tab_active() {
-                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
                                             .to_string()
                                     } else {
-                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
                                             .to_string()
                                     }
                                 }
@@ -183,6 +184,22 @@ pub fn DeliverableCheckerInterface(
                                     </Show>
                                 </div>
                             </button>
+                                <button
+                                    on:click=move |_| {
+                                        active_main_tab.set("playground".to_string());
+                                    }
+                                    class=move || {
+                                        if playground_tab_active() {
+                                            "px-5 py-1 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                                .to_string()
+                                        } else {
+                                            "px-5 py-1 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                                .to_string()
+                                        }
+                                    }
+                                >
+                                    Playground
+                                </button>
                             <button
                                 on:click=move |_| {
                                     active_main_tab.set("input".to_string());
@@ -190,10 +207,10 @@ pub fn DeliverableCheckerInterface(
                                 }
                                 class=move || {
                                     if input_tab_active() {
-                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
                                             .to_string()
                                     } else {
-                                        "px-5 py-2 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
                                             .to_string()
                                     }
                                 }
@@ -297,29 +314,43 @@ pub fn DeliverableCheckerInterface(
                 <Show
                     when=input_tab_active
                     fallback=move || view! {
-                        // Test Lists Section (Top Half)
-                        <div class="h-1/2 border-b border-gray-200 dark:border-gray-700">
-                            <TestChecker
-                                fail_to_pass_tests=fail_to_pass_tests
-                                pass_to_pass_tests=pass_to_pass_tests
-                                current_selection=current_selection
-                                selected_fail_to_pass_index=selected_fail_to_pass_index
-                                selected_pass_to_pass_index=selected_pass_to_pass_index
-                                fail_to_pass_filter=fail_to_pass_filter
-                                pass_to_pass_filter=pass_to_pass_filter
-                                search_for_test=search_for_test
-                                _search_results=search_results
-                                _search_result_indices=search_result_indices
-                                log_analysis_result=log_analysis_result
-                                _log_analysis_loading=log_analysis_loading
-                            />
-                        </div>
-
-                        // Log Search Results Section (Bottom Half)
-                        <LogSearchResultsComponent
-                            search_results=search_results
-                            search_result_indices=search_result_indices
-                        />
+                        <Show
+                            when=playground_tab_active
+                            fallback=move || view! {
+                                // Tests content (default)
+                                <div class="h-1/2 border-b border-gray-200 dark:border-gray-700">
+                                    <TestChecker
+                                        fail_to_pass_tests=fail_to_pass_tests
+                                        pass_to_pass_tests=pass_to_pass_tests
+                                        current_selection=current_selection
+                                        selected_fail_to_pass_index=selected_fail_to_pass_index
+                                        selected_pass_to_pass_index=selected_pass_to_pass_index
+                                        fail_to_pass_filter=fail_to_pass_filter
+                                        pass_to_pass_filter=pass_to_pass_filter
+                                        search_for_test=search_for_test
+                                        _search_results=search_results
+                                        _search_result_indices=search_result_indices
+                                        log_analysis_result=log_analysis_result
+                                        _log_analysis_loading=log_analysis_loading
+                                    />
+                                </div>
+                                <LogSearchResultsComponent
+                                    search_results=search_results
+                                    search_result_indices=search_result_indices
+                                />
+                            }
+                        >
+                            {move || {
+                                use super::playground::Playground;
+                                view! {
+                                    <Playground
+                                        result=result
+                                        fail_to_pass_tests=fail_to_pass_tests
+                                        pass_to_pass_tests=pass_to_pass_tests
+                                    />
+                                }
+                            }}
+                        </Show>
                     }
                 >
                     <FileViewer

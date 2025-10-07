@@ -30,7 +30,21 @@ pub struct ProcessingResult {
     pub deliverable_link: String,
     pub instance_id: String,
     pub task_id: String,
+    pub pr_id: String,
+    pub issue_id: String,
+    pub repo: String,
+    pub problem_statement: String,
+    pub conversation: Vec<ConversationEntry>,
+    pub gold_patch: String,
+    pub test_patch: String,
     pub language: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ConversationEntry {
+    pub author: String,
+    pub content: String,
+    pub timestamp: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

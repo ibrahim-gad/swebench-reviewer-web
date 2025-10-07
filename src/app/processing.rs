@@ -70,6 +70,13 @@ pub fn handle_submit(
                             deliverable_link: link.clone(),
                             instance_id: String::new(),
                             task_id: String::new(),
+                            pr_id: String::new(),
+                            issue_id: String::new(),
+                            repo: String::new(),
+                            problem_statement: String::new(),
+                            conversation: Vec::new(),
+                            gold_patch: String::new(),
+                            test_patch: String::new(),
                             language: String::new(),
                         };
 
