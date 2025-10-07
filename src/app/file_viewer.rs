@@ -28,8 +28,7 @@ pub fn FileViewer(
         
         if contents.get(&current_tab).is_none() && !loaded.is_loaded(&current_tab) {
             if let Some(_) = result.get() {
-                // Trigger the load function
-                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
+                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone(), None);
             }
         }
     });

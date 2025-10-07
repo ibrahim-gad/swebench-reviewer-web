@@ -13,6 +13,7 @@ pub fn load_file_contents(
     file_contents: RwSignal<FileContents>,
     loading_files: RwSignal<bool>,
     loaded_file_types: RwSignal<LoadedFileTypes>,
+    only_load_types: Option<Vec<String>>,
 ) {
     if result.get().is_none() {
         return;
@@ -25,12 +26,10 @@ pub fn load_file_contents(
     
     // Get current loaded types to determine what needs loading
     let current_loaded = loaded_file_types.get();
-    let file_types = vec!["base", "before", "after", "agent", "main_json", "report"];
-    let to_load: Vec<&str> = file_types.iter()
-        .filter(|&&ft| !current_loaded.is_loaded(ft))
-        .copied()
+    let to_load: Vec<String> = only_load_types.unwrap_or(vec!["base", "before", "after", "agent", "main_json", "report"].into_iter().map(|s| s.to_string()).collect()).iter()
+        .filter(|ft| !current_loaded.is_loaded(&ft))
+        .map(|s| s.to_string())
         .collect();
-    
     if to_load.is_empty() {
         loading_files.set(false);
         return;
@@ -42,18 +41,17 @@ pub fn load_file_contents(
         let mut contents = file_contents.get();
         let mut loaded_types = loaded_file_types.get();
         
-        for &file_type in &to_load {
-            let _file_type = file_type;
-            let content = handle_get_file_contents(file_type.to_string(), result_data.file_paths.clone()).await;
+        for file_type in &to_load {
+            let content = handle_get_file_contents(file_type.clone(), result_data.file_paths.clone()).await;
             if let Ok(content) = content {
-                let is_json_type = matches!(file_type, "main_json" | "report")
+                let is_json_type = matches!(file_type.as_str(), "main_json" | "report")
                     || file_type.contains("json");
                 let file_content = FileContent {
                     content,
                     file_type: if is_json_type { "json" } else { "text" }.to_string(),
                 };
                 
-                match file_type {
+                match file_type.as_str() {
                     "base" => contents.base = Some(file_content),
                     "before" => contents.before = Some(file_content),
                     "after" => contents.after = Some(file_content),
@@ -63,7 +61,7 @@ pub fn load_file_contents(
                     _ => {}
                 }
                 
-                loaded_types.set_loaded(file_type);
+                loaded_types.set_loaded(file_type.as_str());
             }
         }
         

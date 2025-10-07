@@ -100,7 +100,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                     let resp = handle_analyze_logs(file_paths).await;
                     match resp {
                         Ok(analysis_result) => {
-                            leptos::logging::log!("Log analysis successful, got {} test statuses", analysis_result.test_statuses.len());
                             log_analysis_result.set(Some(analysis_result));
                         },
                         Err(e) => {
@@ -113,10 +112,6 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
             } else {
                 leptos::logging::log!("No processing result available for log analysis");
             }
-    };
-
-    let _load_file_contents_fn = move || {
-        load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
     };
     
     let search_for_test_fn = move |test_name: String| {
@@ -225,7 +220,8 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
     Effect::new(move |_| {
         if let Some(_) = result.get() {
             if !loading_files.get() && file_contents.get().main_json.is_none() {
-                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone());
+                leptos::logging::log!("Loading main json");
+                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone(), Some(vec!["main_json".to_string()]));
             }
         }
     });
