@@ -77,10 +77,37 @@ pub fn MainApp() -> impl IntoView {
                         </div>
                         <Show when=move || current_deliverable.get().is_some() fallback=|| view!{ <div></div> }>
                             <span class="text-xl font-black text-gray-700 dark:text-white">
-                                {move || current_deliverable.get().map_or(String::new(), |d| match d.instance_id {
-                                    id if !id.is_empty() => format!("[{}]", id),
-                                    _ => String::new()
-                                }) }
+                                <Show when=move || {
+                                    if let Some(d) = current_deliverable.get() {
+                                        !d.instance_id.is_empty()
+                                    } else { false }
+                                }>
+                                    <span class="inline-flex items-center space-x-1">
+                                        <span>"["</span>
+                                        <img
+                                            class="inline-block w-6 h-6 align-text-bottom"
+                                            src=move || {
+                                                current_deliverable.get().map_or(String::from("/icons/empty.png"), |d| {
+                                                    match d.language.to_lowercase().as_str() {
+                                                        "rust" => "/icons/rust.png".to_string(),
+                                                        "javascript" | "typescript" => "/icons/javascript.png".to_string(),
+                                                        "python" => "/icons/python.png".to_string(),
+                                                        "go" => "/icons/go.png".to_string(),
+                                                        "java" => "/icons/java.png".to_string(),
+                                                        "ruby" => "/icons/ruby.png".to_string(),
+                                                        "c++" => "/icons/cpp.png".to_string(),
+                                                        "c#" => "/icons/csharp.png".to_string(),
+                                                        _ => "/icons/empty.png".to_string(),
+                                                    }
+                                                })
+                                            }
+                                            alt=move || current_deliverable.get().map_or(String::new(), |d| d.language.clone())
+                                            title=move || current_deliverable.get().map_or(String::new(), |d| d.language.clone())
+                                        />
+                                        <span>{move || current_deliverable.get().map_or(String::new(), |d| d.instance_id.clone())}</span>
+                                        <span>"]"</span>
+                                    </span>
+                                </Show>
                             </span>
                         </Show>
                         
@@ -153,7 +180,9 @@ pub fn MainApp() -> impl IntoView {
                                 </Show>
                             </div>
                         </Show>
+                        <div class="ml-2">
                                     <ThemeToggle/>
+                                    </div>
                                 </div>
                     </div>
                 </div>

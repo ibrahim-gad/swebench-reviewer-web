@@ -244,7 +244,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                         
                         r.instance_id = instance_id;
                         r.task_id = task_id;
-                        
+                        r.language = json.get("language").and_then(|v| v.as_str()).map(|s| s.to_string().to_lowercase()).unwrap_or_default();
                         result.set(Some(r));
                     }
                 }

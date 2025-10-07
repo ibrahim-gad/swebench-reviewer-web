@@ -414,9 +414,13 @@ pub fn TestChecker(
                                             "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                                         };
                                         
-                                        // Show red border for ALL tests with violations, regardless of selection
+                                        // Show red border for ALL tests with violations; apply red background only when not selected
                                         let violation_class = if has_violations() {
-                                            "border-l-4 border-red-500 bg-red-50/50 dark:bg-red-900/20"
+                                            if is_selected() {
+                                                "border-l-4 border-red-500"
+                                            } else {
+                                                "border-l-4 border-red-500 bg-red-50/50 dark:bg-red-900/20"
+                                            }
                                         } else {
                                             ""
                                         };
@@ -521,9 +525,13 @@ pub fn TestChecker(
                                             "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                                         };
                                         
-                                        // Show red border for ALL tests with violations, regardless of selection
+                                        // Show red border for ALL tests with violations; apply red background only when not selected
                                         let violation_class = if has_violations() {
-                                            "border-l-4 border-red-500 bg-red-50/50 dark:bg-red-900/20"
+                                            if is_selected() {
+                                                "border-l-4 border-red-500"
+                                            } else {
+                                                "border-l-4 border-red-500 bg-red-50/50 dark:bg-red-900/20"
+                                            }
                                         } else {
                                             ""
                                         };

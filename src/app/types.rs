@@ -30,6 +30,7 @@ pub struct ProcessingResult {
     pub deliverable_link: String,
     pub instance_id: String,
     pub task_id: String,
+    pub language: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

@@ -70,6 +70,7 @@ pub fn handle_submit(
                             deliverable_link: link.clone(),
                             instance_id: String::new(),
                             task_id: String::new(),
+                            language: String::new(),
                         };
 
                         result.set(Some(processing_result));
