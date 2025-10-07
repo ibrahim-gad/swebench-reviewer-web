@@ -2,24 +2,33 @@ use crate::app::types::{LogAnalysisResult, LogSearchResults, SearchResult};
 
 
 pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSearchResults, String> {
-    let base_log = file_paths.iter().find(|path| path.to_lowercase().contains("base.log"));
-    let before_log = file_paths.iter().find(|path| path.to_lowercase().contains("before.log"));
-    let after_log = file_paths.iter().find(|path| path.to_lowercase().contains("after.log"));
+    use tempfile::TempDir;
+    use std::path::PathBuf;
+    // Resolve relative paths to absolute under base_temp_dir
+    let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    let temp_path = temp_dir.path().to_string_lossy().to_string();
+    let base_temp_dir = std::path::Path::new(&temp_path).parent().unwrap().join("swe-reviewer-temp");
+
+    let abs_paths: Vec<PathBuf> = file_paths.iter().map(|rel| base_temp_dir.join(rel)).collect();
+
+    let base_log = abs_paths.iter().find(|p| p.to_string_lossy().to_lowercase().contains("base.log"));
+    let before_log = abs_paths.iter().find(|p| p.to_string_lossy().to_lowercase().contains("before.log"));
+    let after_log = abs_paths.iter().find(|p| p.to_string_lossy().to_lowercase().contains("after.log"));
     
     let base_results = if let Some(path) = base_log {
-        search_in_log_file(path, &test_name)?
+        search_in_log_file(&path.to_string_lossy(), &test_name)?
     } else {
         Vec::new()
     };
     
     let before_results = if let Some(path) = before_log {
-        search_in_log_file(path, &test_name)?
+        search_in_log_file(&path.to_string_lossy(), &test_name)?
     } else {
         Vec::new()
     };
     
     let after_results = if let Some(path) = after_log {
-        search_in_log_file(path, &test_name)?
+        search_in_log_file(&path.to_string_lossy(), &test_name)?
     } else {
         Vec::new()
     };
@@ -96,9 +105,19 @@ pub fn analyze_logs(
 ) -> Result<LogAnalysisResult, String> {
     use crate::api::log_parser::LogParser;
     use std::fs;
+    use tempfile::TempDir;
+    use std::path::PathBuf;
     
+    // Resolve relative paths to absolute under base_temp_dir
+    let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    let temp_path = temp_dir.path().to_string_lossy().to_string();
+    let base_temp_dir = std::path::Path::new(&temp_path).parent().unwrap().join("swe-reviewer-temp");
+
+    let abs_paths: Vec<PathBuf> = file_paths.iter().map(|rel| base_temp_dir.join(rel)).collect();
+    let abs_paths_str: Vec<String> = abs_paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+
     // Find main.json to get test lists
-    let main_json_path = file_paths.iter()
+    let main_json_path = abs_paths_str.iter()
         .find(|path| path.to_lowercase().contains("main.json") || path.to_lowercase().contains("main/"));
     
     let (fail_to_pass_tests, pass_to_pass_tests, language) = if let Some(path) = main_json_path {
@@ -137,6 +156,6 @@ pub fn analyze_logs(
     };
     
     let log_checker = LogParser::new();
-    log_checker.analyze_logs(&file_paths, &language, &fail_to_pass_tests, &pass_to_pass_tests)
+    log_checker.analyze_logs(&abs_paths_str, &language, &fail_to_pass_tests, &pass_to_pass_tests)
 }
 

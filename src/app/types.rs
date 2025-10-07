@@ -21,7 +21,6 @@ pub struct DownloadRequest {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DownloadResult {
-    pub temp_directory: String,
     pub downloaded_files: Vec<FileInfo>,
 }
 

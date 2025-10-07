@@ -381,7 +381,8 @@ pub async fn download_deliverable_impl(
                 cached_files.push(FileInfo {
                     id: file_info.id.clone(),
                     name: file_info.name.clone(),
-                    path: cached_file_path.to_string_lossy().to_string(),
+                    // Return path relative to base_temp_dir; starts with folder_id
+                    path: format!("{}/{}", folder_id, file_info.path),
                 });
             } else {
                 all_files_cached = false;
@@ -391,7 +392,6 @@ pub async fn download_deliverable_impl(
 
         if all_files_cached && !cached_files.is_empty() {
             return Ok(DownloadResult {
-                temp_directory: persist_dir.to_string_lossy().to_string(),
                 downloaded_files: cached_files,
             });
         }
@@ -459,20 +459,25 @@ pub async fn download_deliverable_impl(
     // Build final file list including both cached and newly downloaded files
     let mut updated_files = Vec::new();
     
-    // Add newly downloaded files
+    // Add newly downloaded files (returned as relative to base_temp_dir)
     for file_info in downloaded_files {
         let source = std::path::Path::new(&file_info.path);
         let relative_path = source.strip_prefix(&temp_path).unwrap();
-        let new_path = persist_dir.join(relative_path);
+        // Persisted location is base_temp_dir/folder_id/<relative_path>
+        let returned_rel_path = format!(
+            "{}/{}",
+            folder_id,
+            relative_path.to_string_lossy()
+        );
 
         updated_files.push(FileInfo {
             id: file_info.id,
             name: file_info.name,
-            path: new_path.to_string_lossy().to_string(),
+            path: returned_rel_path,
         });
     }
 
-    // Add cached files (those with placeholder IDs)
+    // Add cached files (those with placeholder IDs) as relative paths
     for file_info in &files_to_download {
         if file_info.id == "cached" {
             let cached_file_path = persist_dir.join(&file_info.path);
@@ -480,14 +485,14 @@ pub async fn download_deliverable_impl(
                 updated_files.push(FileInfo {
                     id: file_info.id.clone(),
                     name: file_info.name.clone(),
-                    path: cached_file_path.to_string_lossy().to_string(),
+                    // Return path relative to base_temp_dir; starts with folder_id
+                    path: format!("{}/{}", folder_id, file_info.path),
                 });
             }
         }
     }
 
     Ok(DownloadResult {
-        temp_directory: persist_dir.to_string_lossy().to_string(),
         downloaded_files: updated_files,
     })
 }
