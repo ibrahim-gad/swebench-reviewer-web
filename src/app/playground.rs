@@ -18,7 +18,7 @@ impl PaneView {
             PaneView::F2P => "F2P",
             PaneView::P2P => "P2P",
             PaneView::Issue => "Issue",
-            PaneView::PRFiles => "PR Files",
+            PaneView::PRFiles => "PR Src",
             PaneView::PRTests => "PR Tests",
         }
     }
@@ -80,14 +80,14 @@ pub fn Playground(
 
     let render_tests_list = move |tests: Vec<String>| {
         view! {
-            <div class="h-full overflow-auto">
-                <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+            <div class="h-full overflow-auto bg-white dark:bg-gray-800">
+                <ul class="divide-y divide-gray-200 dark:divide-gray-600">
                     <For
                         each=move || tests.clone()
                         key=|name| name.clone()
                         children=move |name| {
                             view! {
-                                <li class="px-3 py-1 text-sm text-gray-800 dark:text-gray-200 truncate">{name}</li>
+                                <li class="px-3 py-1 text-sm text-gray-800 dark:text-gray-300 truncate">{name}</li>
                             }
                         }
                     />
@@ -110,9 +110,11 @@ pub fn Playground(
 
     let render_issue_like = move || {
         view! {
-            <div class="h-full w-full overflow-auto bg-white dark:bg-gray-900">
-                <div class="border-b border-gray-200 dark:border-gray-700 p-3">
-                    <h2 class="text-base font-semibold text-gray-900 dark:text-white">Problem statement</h2>
+            <div class="h-full w-full overflow-auto bg-white dark:bg-gray-800 p-3">
+                <div class="mb-3 border border-gray-200 dark:border-gray-600 rounded">
+                    <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                        <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">Problem Statement</span>
+                    </div>
                     {let md = Memo::new(move |_| result.get().map(|r| r.problem_statement.clone()).unwrap_or_default());
                      let rendered = Memo::new(move |_| {
                         let mut opts = Options::empty();
@@ -123,11 +125,11 @@ pub fn Playground(
                         html::push_html(&mut html_out, parser);
                         html_out
                      });
-                     view! { <div class="mt-2 prose prose-sm dark:prose-invert max-w-none" inner_html=rendered.get()></div> }
+                     view! { <div class="px-3 py-2 prose prose-sm dark:prose-invert max-w-none" inner_html=rendered.get()></div> }
                     }
                 </div>
-                <div class="p-3">
-                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Conversation</h3>
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">Conversation</h3>
                     <Show
                         when=move || result.get().map(|r| !r.conversation.is_empty()).unwrap_or(false)
                         fallback=move || view!{<div class="text-sm text-gray-500 dark:text-gray-400">No conversation.</div>}
@@ -148,8 +150,8 @@ pub fn Playground(
                                         html_out
                                     });
                                     view! { 
-                                        <li class="border border-gray-200 dark:border-gray-700 rounded">
-                                            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                                        <li class="border border-gray-200 dark:border-gray-600 rounded">
+                                            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 flex items-center justify-between">
                                                 <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{e.author}</span>
                                                 <span class="text-[10px] text-gray-500 dark:text-gray-400">{e.timestamp}</span>
                                             </div>
@@ -191,7 +193,7 @@ pub fn Playground(
                     '+' => ("bg-green-50 dark:bg-green-700/40", "text-green-700 dark:text-green-200", "border-l-2 border-green-400 dark:border-green-300"),
                     '-' => ("bg-red-50 dark:bg-red-700/40", "text-red-700 dark:text-red-200", "border-l-2 border-red-400 dark:border-red-300"),
                     '@' => ("bg-blue-100 dark:bg-sky-800/60", "text-blue-900 dark:text-sky-200", "border-l-2 border-sky-400 dark:border-sky-300"),
-                    _ => ("dark:bg-gray-900", "text-gray-500 dark:text-gray-400", "border-l border-transparent"),
+                    _ => ("bg-white dark:bg-gray-800", "text-gray-500 dark:text-gray-400", "border-l border-transparent"),
                 };
                 let line_text = row.text.clone();
                 let left_num = row.left.map(|n| n.to_string()).unwrap_or_default();
@@ -209,10 +211,10 @@ pub fn Playground(
             }).collect::<Vec<_>>();
             let expanded = RwSignal::new(true);
             out.push(view! {
-                <div class="mb-3 border border-gray-200 dark:border-gray-700 rounded overflow-hidden bg-white dark:bg-gray-950">
-                    <div class="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 font-semibold truncate flex items-center justify-between text-gray-800 dark:text-gray-100">
+                <div class="mb-3 border border-gray-200 dark:border-gray-600 rounded overflow-hidden bg-white dark:bg-gray-800">
+                    <div class="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 font-semibold truncate flex items-center justify-between text-gray-800 dark:text-gray-100">
                         <div class="truncate">{file_name}</div>
-                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600"
                             on:click=move |_| expanded.set(!expanded.get())>
                             {move || if expanded.get() { "Collapse".to_string() } else { "Expand".to_string() }}
                         </button>
@@ -305,16 +307,16 @@ pub fn Playground(
         let allowed_prev = allowed.clone();
         let allowed_next = allowed.clone();
         view! {
-            <div class="flex flex-col h-full overflow-hidden border border-gray-200 dark:border-gray-700 rounded">
-                <div class="flex items-center justify-between px-2 py-1 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex flex-col h-full overflow-hidden border border-gray-300 dark:border-gray-700 rounded">
+                <div class="flex items-center justify-between px-2 py-1 bg-gray-200 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                     <span class="text-xs font-semibold text-gray-800 dark:text-gray-100">
                         {move || view_signal.get().to_label().to_string()}
                     </span>
                     <div class="flex items-center gap-1">
-                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-100"
+                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
                             on:click=move |_| view_signal.set(prev_view(view_signal.get(), &allowed_prev))>{"<"}</button>
-                        <span class="text-xs text-gray-600 dark:text-gray-100 w-14 text-center truncate">{move || view_signal.get().to_label()}</span>
-                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-100"
+                        <span class="text-xs text-gray-600 dark:text-gray-300 w-14 text-center truncate">{move || view_signal.get().to_label()}</span>
+                        <button class="px-2 py-0.5 text-xs rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
                             on:click=move |_| view_signal.set(next_view(view_signal.get(), &allowed_next))>{">"}</button>
                     </div>
                 </div>
@@ -334,9 +336,9 @@ pub fn Playground(
     };
 
     view! {
-            <div class="h-full w-full p-2 bg-white dark:bg-gray-900">
-            <div class="grid grid-cols-2 gap-2 h-full min-h-0">
-                <div class="col-span-1 grid grid-rows-2 gap-2 h-full min-h-0">
+            <div class="h-full w-full bg-white dark:bg-gray-800">
+            <div class="grid grid-cols-2 gap-1 h-full min-h-0">
+                <div class="col-span-1 grid grid-rows-2 gap-1 h-full min-h-0">
                     {render_pane("Left Top".to_string(), left_top, left_top_allowed.clone())}
                     {render_pane("Left Bottom".to_string(), left_bottom, left_bottom_allowed.clone())}
                 </div>
