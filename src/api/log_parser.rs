@@ -7,6 +7,32 @@ use regex::Regex;
 use crate::api::rust_log_parser::RustLogParser;
 use crate::app::types::{TestStatus, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
+// Helper function to check if diff content contains an exact test name
+fn contains_exact_test_name(diff_content: &str, test_name: &str) -> bool {
+    // Split the test name to handle module paths like "test_module::test_function"
+    let test_parts: Vec<&str> = test_name.split("::").collect();
+    let function_name = test_parts.last().unwrap_or(&test_name);
+    
+    // Look for exact matches in various test declaration patterns
+    let patterns = [
+        format!("fn {}(", function_name),           // fn test_name(
+        format!("fn {} (", function_name),          // fn test_name (
+        format!("fn {}\n", function_name),          // fn test_name\n
+        format!("fn {}\r", function_name),          // fn test_name\r
+        format!("fn {}\t", function_name),          // fn test_name\t  
+        format!("fn {}{{", function_name),          // fn test_name{
+        format!("async fn {}(", function_name),     // async fn test_name(
+        format!("async fn {} (", function_name),    // async fn test_name (
+    ];
+    
+    patterns.iter().any(|pattern| diff_content.contains(pattern)) ||
+    // Also check for the full test name in test declarations
+    diff_content.contains(&format!("fn {}(", test_name)) ||
+    diff_content.contains(&format!("fn {} (", test_name)) ||
+    diff_content.contains(&format!("async fn {}(", test_name)) ||
+    diff_content.contains(&format!("async fn {} (", test_name))
+}
+
 // Trait for language-specific log parsers
 pub trait LogParserTrait {
     fn parse_log_file(&self, file_path: &str) -> Result<ParsedLog, String>;
@@ -716,9 +742,9 @@ impl LogParser {
                                 f2p_test
                             };
                             
-                            if diff_content.contains(test_name_to_search) {
+                            if contains_exact_test_name(&diff_content, test_name_to_search) {
                                 // Check if this test also appears in test diffs
-                                if !test_diff_contents.is_empty() && test_diff_contents.contains(test_name_to_search) {
+                                if !test_diff_contents.is_empty() && contains_exact_test_name(&test_diff_contents, test_name_to_search) {
                                     println!("F2P test '{}' found in both golden source and test diffs - not a violation", f2p_test);
                                 } else {
                                     let violation = format!("{} (found as '{}' in {} but not in test diffs)", 
