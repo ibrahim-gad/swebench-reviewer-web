@@ -78,6 +78,14 @@ pub fn Playground(
     let left_bottom = RwSignal::new(PaneView::F2P);
     let right = RwSignal::new(PaneView::PRFiles);
 
+	// Resizable layout state
+	let is_resizing_vertical = RwSignal::new(false);
+	let is_resizing_horizontal = RwSignal::new(false);
+	let last_mouse_x = RwSignal::new(0i32);
+	let last_mouse_y = RwSignal::new(0i32);
+	let left_width_px = RwSignal::new(560i32);
+	let left_top_height_px = RwSignal::new(300i32);
+
     let render_tests_list = move |tests: Vec<String>| {
         view! {
             <div class="h-full overflow-auto bg-white dark:bg-gray-800">
@@ -303,7 +311,6 @@ pub fn Playground(
     };
 
     let render_pane = move |title: String, view_signal: RwSignal<PaneView>, allowed: Vec<PaneView>| {
-        let title_clone = title.clone();
         let allowed_prev = allowed.clone();
         let allowed_next = allowed.clone();
         view! {
@@ -335,18 +342,65 @@ pub fn Playground(
         }
     };
 
-    view! {
-            <div class="h-full w-full bg-white dark:bg-gray-800">
-            <div class="grid grid-cols-2 gap-1 h-full min-h-0">
-                <div class="col-span-1 grid grid-rows-2 gap-1 h-full min-h-0">
-                    {render_pane("Left Top".to_string(), left_top, left_top_allowed.clone())}
-                    {render_pane("Left Bottom".to_string(), left_bottom, left_bottom_allowed.clone())}
-                </div>
-                <div class="col-span-1 h-full min-h-0">
-                    {render_pane("Right".to_string(), right, right_allowed.clone())}
-                </div>
-            </div>
-        </div>
-    }
+	view! {
+	        	<div
+	        		class="h-full w-full bg-white dark:bg-gray-800 select-none"
+	        		on:mousemove=move |ev| {
+	        			if is_resizing_vertical.get() {
+	        				let dx = ev.client_x() - last_mouse_x.get();
+	        				let next = left_width_px.get().saturating_add(dx).clamp(180, 4000);
+	        				left_width_px.set(next);
+	        				last_mouse_x.set(ev.client_x());
+	        				ev.prevent_default();
+	        			} else if is_resizing_horizontal.get() {
+	        				let dy = ev.client_y() - last_mouse_y.get();
+	        				let next = left_top_height_px.get().saturating_add(dy).clamp(120, 3000);
+	        				left_top_height_px.set(next);
+	        				last_mouse_y.set(ev.client_y());
+	        				ev.prevent_default();
+	        			}
+	        		}
+	        		on:mouseup=move |_| {
+	        			is_resizing_vertical.set(false);
+	        			is_resizing_horizontal.set(false);
+	        		}
+	        		on:mouseleave=move |_| {
+	        			is_resizing_vertical.set(false);
+	        			is_resizing_horizontal.set(false);
+	        		}
+	        	>
+	        	<div class="flex h-full min-h-0">
+	        		<div class="h-full min-h-0" style=move || format!("width: {}px;", left_width_px.get())>
+	        			<div class="flex flex-col h-full min-h-0">
+	        				<div class="min-h-0 overflow-hidden" style=move || format!("height: {}px;", left_top_height_px.get())>
+	        					{render_pane("Left Top".to_string(), left_top, left_top_allowed.clone())}
+	        				</div>
+	        				<div
+	        					class="h-1 bg-gray-300 dark:bg-gray-700 cursor-row-resize hover:bg-gray-400 dark:hover:bg-gray-600"
+	        					on:mousedown=move |ev| {
+	        						is_resizing_horizontal.set(true);
+	        						last_mouse_y.set(ev.client_y());
+	        						ev.prevent_default();
+	        					}
+	        				/>
+	        				<div class="flex-1 min-h-0 overflow-hidden">
+	        					{render_pane("Left Bottom".to_string(), left_bottom, left_bottom_allowed.clone())}
+	        				</div>
+	        			</div>
+	        		</div>
+	        		<div
+	        			class="w-1 bg-gray-300 dark:bg-gray-700 cursor-col-resize hover:bg-gray-400 dark:hover:bg-gray-600"
+	        			on:mousedown=move |ev| {
+	        				is_resizing_vertical.set(true);
+	        				last_mouse_x.set(ev.client_x());
+	        				ev.prevent_default();
+	        			}
+	        		/>
+	        		<div class="flex-1 h-full min-h-0 overflow-hidden">
+	        			{render_pane("Right".to_string(), right, right_allowed.clone())}
+	        		</div>
+	        	</div>
+	        </div>
+	    }
 }
 
