@@ -169,7 +169,7 @@ pub fn DeliverableCheckerInterface(
                                 }
                             >
                                 <div class="flex items-center gap-2">
-                                    <span>"Tests Checker"</span>
+                                    <span>"Tests"</span>
                                     <Show
                                         when=move || log_analysis_loading.get()
                                         fallback=|| view! { <div></div> }

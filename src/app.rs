@@ -69,7 +69,7 @@ pub fn MainApp() -> impl IntoView {
             // Header
             <div class="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700">
                 <div class="w-full mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex justify-between items-center h-16">
+                    <div class="flex justify-between items-center h-14">
                         <div class="flex items-center">
                             <h1 class="text-xl font-semibold text-gray-900 dark:text-white">
                                 "SWE Reviewer"
@@ -189,7 +189,7 @@ pub fn MainApp() -> impl IntoView {
             </div>
 
             // Main content
-            <div class="w-full bg-white dark:bg-gray-800" style="height: calc(100vh - 65px);">
+            <div class="w-full bg-white dark:bg-gray-800" style="height: calc(100vh - 57px);">
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=move || DeliverableCheckerPage(DeliverableCheckerPageProps { current_deliverable: current_deliverable.clone() }) />
                     <Route path=ParamSegment("deliverable_id") view=move || DeliverableCheckerPage(DeliverableCheckerPageProps { current_deliverable: current_deliverable.clone() }) />

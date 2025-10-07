@@ -305,8 +305,10 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                                                 .get()
                                                 .map(|err| {
                                                     view! {
-                                                        <div class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                                        <div class="flex gap-4 justify-center">
+                                                        <div class="w-full max-w-2xl mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                                                             <p class="text-red-600 dark:text-red-400">{err}</p>
+                                                        </div>
                                                         </div>
                                                     }
                                                 })
