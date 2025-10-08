@@ -956,19 +956,20 @@ fn process_test_status(
 fn extract_test_name_from_nextest_line(full_line: &str) -> String {
     let trimmed = full_line.trim();
     
-    // Simple approach: Just return the full test name as captured by regex
-    // The nextest format is: "PASS [time] full_test_name"
-    // We should preserve the full test name exactly as it appears
+    // Handle "miden-crypto word::tests::..." format - extract just the test part
+    if trimmed.starts_with("miden-crypto ") {
+        return trimmed[13..].trim().to_string(); // 13 = len("miden-crypto ")
+    }
     
-    // Special handling for known patterns in main.json:
-    // 1. "miden-testing kernel_tests::..." -> keep as is
-    // 2. "miden-testing::miden-integration-tests ..." -> keep as is  
-    // 3. "miden-lib ..." -> keep as is
-    // 4. "miden-objects ..." -> keep as is
-    // 5. "miden-tx ..." -> keep as is
-    
-    // For miden crates, the format in main.json matches exactly what's in the log
+    // Handle other miden crate formats with space separator
     if trimmed.starts_with("miden-") {
+        if let Some(space_pos) = trimmed.find(' ') {
+            let test_part = &trimmed[space_pos + 1..];
+            if test_part.contains("::") {
+                return test_part.trim().to_string();
+            }
+        }
+        // If no space or no :: in test part, return the full line
         return trimmed.to_string();
     }
     
