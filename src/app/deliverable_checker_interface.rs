@@ -283,27 +283,16 @@ pub fn DeliverableCheckerInterface(
                             </div>
                             
                             // Fixed violation display with consistent View type structure
-                            {move || {
-                                let violations = get_selected_test_violations();
-                                if !violations.is_empty() {
-                                    view! {
-                                        <div class="ml-2 space-y-0 max-h-24 overflow-y-hidden">
-                                            {violations.into_iter().map(|rule| view! {
-                                                <div class="p-0 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
-                                                    <div class="text-red-700 dark:text-red-300">{rule.description}</div>
-                                                </div>
-                                            }).collect_view()}
+                            <div class="ml-2 space-y-0 max-h-24 overflow-y-hidden">
+                                {move || {
+                                    let violations = get_selected_test_violations();
+                                    violations.into_iter().map(|rule| view! {
+                                        <div class="p-0 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-800 dark:text-red-200">
+                                            <div class="text-red-700 dark:text-red-300">{rule.description}</div>
                                         </div>
-                                    }
-                                } else {
-                                    
-                                    view! {
-                                        <div class="ml-2 mt-2 space-y-1 max-h-24 overflow-y-auto">
-                                            <div></div>
-                                        </div>
-                                    }
-                                }
-                            }}
+                                    }).collect_view()
+                                }}
+                            </div>
                         </div>
                     </Show>
                 </div>
