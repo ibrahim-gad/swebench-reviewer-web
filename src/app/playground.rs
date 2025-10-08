@@ -86,7 +86,7 @@ pub fn Playground(
 	let left_width_px = RwSignal::new(560i32);
 	let left_top_height_px = RwSignal::new(300i32);
 
-    let render_tests_list = move |tests: Vec<String>| {
+    let render_tests_list = move |tests: Vec<String>| -> AnyView {
         view! {
             <div class="h-full overflow-auto bg-white dark:bg-gray-800">
                 <ul class="divide-y divide-gray-200 dark:divide-gray-600">
@@ -101,7 +101,7 @@ pub fn Playground(
                     />
                 </ul>
             </div>
-        }
+        }.into_any()
     };
 
     let render_iframe = move |url: String| {
@@ -116,7 +116,7 @@ pub fn Playground(
         }
     };
 
-    let render_issue_like = move || {
+    let render_issue_like = move || -> AnyView {
         view! {
             <div class="h-full w-full overflow-auto bg-white dark:bg-gray-800 p-3">
                 <div class="mb-3 border border-gray-200 dark:border-gray-600 rounded">
@@ -140,7 +140,7 @@ pub fn Playground(
                     <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">Conversation</h3>
                     <Show
                         when=move || result.get().map(|r| !r.conversation.is_empty()).unwrap_or(false)
-                        fallback=move || view!{<div class="text-sm text-gray-500 dark:text-gray-400">No conversation.</div>}
+                        fallback=move || view!{<div class="text-sm text-gray-500 dark:text-gray-400">No conversation.</div>}.into_any()
                     >
                         <ul class="space-y-3">
                             <For
@@ -172,7 +172,7 @@ pub fn Playground(
                     </Show>
                 </div>
             </div>
-        }
+        }.into_any()
     };
 
     // Simple unified diff rendering helpers
@@ -310,7 +310,7 @@ pub fn Playground(
         render_unified_diff(test)
     };
 
-    let render_pane = move |title: String, view_signal: RwSignal<PaneView>, allowed: Vec<PaneView>| {
+    let render_pane = move |title: String, view_signal: RwSignal<PaneView>, allowed: Vec<PaneView>| -> AnyView {
         let allowed_prev = allowed.clone();
         let allowed_next = allowed.clone();
         view! {
@@ -330,16 +330,16 @@ pub fn Playground(
                 <div class="flex-1 min-h-0 overflow-auto">
                     {move || {
                         match view_signal.get() {
-                            PaneView::F2P => render_tests_list(fail_to_pass_tests.get()).into_any(),
-                            PaneView::P2P => render_tests_list(pass_to_pass_tests.get()).into_any(),
-                            PaneView::Issue => render_issue_like().into_any(),
-                            PaneView::PRFiles => render_pr_files_diff().into_any(),
-                            PaneView::PRTests => render_pr_tests_diff().into_any(),
+                            PaneView::F2P => render_tests_list(fail_to_pass_tests.get()),
+                            PaneView::P2P => render_tests_list(pass_to_pass_tests.get()),
+                            PaneView::Issue => render_issue_like(),
+                            PaneView::PRFiles => render_pr_files_diff(),
+                            PaneView::PRTests => render_pr_tests_diff(),
                         }
                     }}
                 </div>
             </div>
-        }
+        }.into_any()
     };
 
 	view! {

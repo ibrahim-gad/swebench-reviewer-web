@@ -257,7 +257,7 @@ pub fn TestChecker(
         }
     });
 
-    // Helper function to render status icon - unchanged
+    // Helper function to render status icon with type erasure to reduce monomorphization depth
     let render_status_icon = move |status: &str| {
         match status {
             "passed" => view! {
@@ -268,7 +268,7 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             "failed" => view! {
                 <div class="w-4 h-4 flex items-center justify-center bg-red-100 dark:bg-red-300 rounded-full">
                     <img 
@@ -277,7 +277,7 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             "missing" => view! {
                 <div class="w-4 h-4 flex items-center justify-center bg-yellow-100 dark:bg-yellow-300 rounded-full">
                     <img 
@@ -286,14 +286,14 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             _ => view! {
                 <div class=""><div class=""></div></div>
-            }
+            }.into_any(),
         }
     };
 
-    // Refactored helper function to render status row using precomputed statuses - updated to include violations
+    // Refactored helper function to render status row using precomputed statuses - with type erasure
     let render_status_row = move |test_name: String, test_type: &str| {
         if true {
             let statuses_map = if test_type == "fail_to_pass" {
@@ -309,7 +309,7 @@ pub fn TestChecker(
                         {render_status_icon(before_status)}
                         {render_status_icon(after_status)}
                     </div>
-                }
+                }.into_any()
             } else {
                 view! {
                     <div class="flex items-center gap-1" title="Base | Before | After">
@@ -317,7 +317,7 @@ pub fn TestChecker(
                         {render_status_icon("missing")}
                         {render_status_icon("missing")}
                     </div>
-                }
+                }.into_any()
             }
         } else {
             view! { 
@@ -326,7 +326,7 @@ pub fn TestChecker(
                     {render_status_icon("ignored")}
                     {render_status_icon("ignored")}
                 </div>
-            }
+            }.into_any()
         }
     };
     view! {
@@ -441,7 +441,7 @@ pub fn TestChecker(
                                         {move || render_status_row(test_name_for_status.clone(), "fail_to_pass")}
                                     </div>
                                 </div>
-                            }
+                            }.into_any()
                         }
                     />
                 </div>
@@ -552,7 +552,7 @@ pub fn TestChecker(
                                         {move || render_status_row(test_name_for_status.clone(), "pass_to_pass")}
                                     </div>
                                 </div>
-                            }
+                            }.into_any()
                         }
                     />
                 </div>
