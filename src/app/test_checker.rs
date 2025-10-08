@@ -165,7 +165,15 @@ pub fn TestChecker(
             // C7: F2P tests in golden source diff
             if test_type == "fail_to_pass" && rule_checks.c7_f2p_tests_in_golden_source_diff.has_problem {
                 let matches = rule_checks.c7_f2p_tests_in_golden_source_diff.examples.iter()
-                    .any(|example| example.contains(test_name));
+                    .any(|example| {
+                        // C7 examples have format: "test_name (found as 'function_name' in file but not in test diffs)"
+                        // Extract the test name before the first " (" to get exact match
+                        if let Some(test_part) = example.split(" (").next() {
+                            test_part == test_name
+                        } else {
+                            example == test_name
+                        }
+                    });
                 if matches {
                     violated_rules.push(RuleViolationInfo::new(
                         "c7_f2p_tests_in_golden_source_diff",
