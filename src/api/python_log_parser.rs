@@ -27,9 +27,17 @@ impl TestStatus {
 
 // Compile regex patterns once at module level to avoid repeated compilation
 lazy_static! {
-    // PyTest patterns
-    static ref PYTEST_STATUS_RE: Regex = Regex::new(r"^(PASSED|FAILED|ERROR|SKIPPED)\s+(.+?)(?:\s+-\s+.*)?$")
+    // PyTest patterns - now includes XFAIL support
+    static ref PYTEST_STATUS_RE: Regex = Regex::new(r"^(PASSED|FAILED|ERROR|SKIPPED|XFAIL)\s+(.+?)(?:\s+-\s+.*)?$")
         .expect("Failed to compile PYTEST_STATUS_RE regex");
+    
+    // Enhanced pattern for pytest status lines with better parametrized test support
+    static ref PYTEST_ENHANCED_STATUS_RE: Regex = Regex::new(r"^(\d*)(PASSED|FAILED|ERROR|SKIPPED|XFAIL)\s+(.+?)(?:\s+\[\s*\d+%\s*\])?(?:\s+-\s+.*)?$")
+        .expect("Failed to compile PYTEST_ENHANCED_STATUS_RE regex");
+    
+    // Pattern for parametrized tests with complex parameters
+    static ref PYTEST_PARAMETRIZED_RE: Regex = Regex::new(r"(.+?)(?:\[([^\]]*)\])?\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL)")  
+        .expect("Failed to compile PYTEST_PARAMETRIZED_RE regex");
     
     static ref PYTEST_OPTIONS_RE: Regex = Regex::new(r"(.*?)\[(.*)\]")
         .expect("Failed to compile PYTEST_OPTIONS_RE regex");
@@ -112,7 +120,11 @@ impl PythonLogParser {
         }
         
         // Check for pytest indicators
-        if content.contains("pytest") || content.contains("PASSED") || content.contains("FAILED") {
+        if content.contains("pytest") || content.contains("PASSED") || content.contains("FAILED") || content.contains("XFAIL") {
+            // Check if it has XFAIL or complex parametrized tests (enhanced format)
+            if content.contains("XFAIL") || (content.contains("[") && content.contains("%]")) {
+                return "pytest_enhanced".to_string();
+            }
             // Check if it's pytest v2 format (with ANSI codes)
             if ANSI_ESCAPE_RE.is_match(content) {
                 return "pytest_v2".to_string();
@@ -145,6 +157,7 @@ impl LogParserTrait for PythonLogParser {
             "seaborn" => Ok(parse_log_seaborn(&content)),
             "sympy" => Ok(parse_log_sympy(&content)),
             "matplotlib" => Ok(parse_log_matplotlib(&content)),
+            "pytest_enhanced" => Ok(parse_log_pytest_enhanced(&content)),
             "pytest_options" => Ok(parse_log_pytest_options(&content)),
             "pytest_v2" => Ok(parse_log_pytest_v2(&content)),
             _ => Ok(parse_log_pytest(&content)),
@@ -162,7 +175,7 @@ fn parse_log_pytest(log: &str) -> ParsedLog {
         
         // Check if line starts with any test status
         if line.starts_with("PASSED") || line.starts_with("FAILED") || 
-           line.starts_with("ERROR") || line.starts_with("SKIPPED") {
+           line.starts_with("ERROR") || line.starts_with("SKIPPED") || line.starts_with("XFAIL") {
             
             if let Some(captures) = PYTEST_STATUS_RE.captures(line) {
                 let status = captures.get(1).unwrap().as_str();
@@ -178,7 +191,7 @@ fn parse_log_pytest(log: &str) -> ParsedLog {
                 match status {
                     "PASSED" => { passed.insert(test_case); }
                     "FAILED" | "ERROR" => { failed.insert(test_case); }
-                    "SKIPPED" => { ignored.insert(test_case); }
+                    "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
                     _ => {}
                 }
             }
@@ -202,7 +215,7 @@ fn parse_log_pytest_options(log: &str) -> ParsedLog {
         let line = line.trim();
         
         if line.starts_with("PASSED") || line.starts_with("FAILED") || 
-           line.starts_with("ERROR") || line.starts_with("SKIPPED") {
+           line.starts_with("ERROR") || line.starts_with("SKIPPED") || line.starts_with("XFAIL") {
             
             if let Some(captures) = PYTEST_STATUS_RE.captures(line) {
                 let status = captures.get(1).unwrap().as_str();
@@ -237,7 +250,7 @@ fn parse_log_pytest_options(log: &str) -> ParsedLog {
                 match status {
                     "PASSED" => { passed.insert(test_name); }
                     "FAILED" | "ERROR" => { failed.insert(test_name); }
-                    "SKIPPED" => { ignored.insert(test_name); }
+                    "SKIPPED" | "XFAIL" => { ignored.insert(test_name); }
                     _ => {}
                 }
             }
@@ -505,7 +518,7 @@ fn parse_log_pytest_v2(log: &str) -> ParsedLog {
         
         // Check if line starts with test status
         if line.starts_with("PASSED") || line.starts_with("FAILED") || 
-           line.starts_with("ERROR") || line.starts_with("SKIPPED") {
+           line.starts_with("ERROR") || line.starts_with("SKIPPED") || line.starts_with("XFAIL") {
             
             if let Some(captures) = PYTEST_STATUS_RE.captures(line) {
                 let status = captures.get(1).unwrap().as_str();
@@ -522,14 +535,14 @@ fn parse_log_pytest_v2(log: &str) -> ParsedLog {
                 match status {
                     "PASSED" => { passed.insert(test_case); }
                     "FAILED" | "ERROR" => { failed.insert(test_case); }
-                    "SKIPPED" => { ignored.insert(test_case); }
+                    "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
                     _ => {}
                 }
             }
         }
         // Support older pytest versions by checking if the line ends with the test status
         else if line.ends_with("PASSED") || line.ends_with("FAILED") || 
-                line.ends_with("ERROR") || line.ends_with("SKIPPED") {
+                line.ends_with("ERROR") || line.ends_with("SKIPPED") || line.ends_with("XFAIL") {
             
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
@@ -539,7 +552,87 @@ fn parse_log_pytest_v2(log: &str) -> ParsedLog {
                 match status {
                     "PASSED" => { passed.insert(test_name); }
                     "FAILED" | "ERROR" => { failed.insert(test_name); }
-                    "SKIPPED" => { ignored.insert(test_name); }
+                    "SKIPPED" | "XFAIL" => { ignored.insert(test_name); }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut all = HashSet::new();
+    all.extend(passed.iter().cloned());
+    all.extend(failed.iter().cloned());
+    all.extend(ignored.iter().cloned());
+
+    ParsedLog { passed, failed, ignored, all }
+}
+
+fn parse_log_pytest_enhanced(log: &str) -> ParsedLog {
+    let mut passed = HashSet::new();
+    let mut failed = HashSet::new();
+    let mut ignored = HashSet::new();
+
+    // Remove ANSI escape codes and control characters
+    let clean_log = clean_ansi_escapes(log);
+
+    for line in clean_log.lines() {
+        let line = line.trim();
+        
+        // Try enhanced pattern first (handles line numbers, percentages, etc.)
+        if let Some(captures) = PYTEST_ENHANCED_STATUS_RE.captures(line) {
+            let _line_number = captures.get(1).map(|m| m.as_str()).unwrap_or("");
+            let status = captures.get(2).unwrap().as_str();
+            let test_case = captures.get(3).unwrap().as_str().to_string();
+            
+            match status {
+                "PASSED" => { passed.insert(test_case); }
+                "FAILED" | "ERROR" => { failed.insert(test_case); }
+                "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
+                _ => {}
+            }
+            continue;
+        }
+        
+        // Try parametrized pattern (handles complex parameters)
+        if let Some(captures) = PYTEST_PARAMETRIZED_RE.captures(line) {
+            let test_base = captures.get(1).unwrap().as_str();
+            let params = captures.get(2).map(|m| m.as_str()).unwrap_or("");
+            let status = captures.get(3).unwrap().as_str();
+            
+            let test_case = if params.is_empty() {
+                test_base.to_string()
+            } else {
+                format!("{}[{}]", test_base, params)
+            };
+            
+            match status {
+                "PASSED" => { passed.insert(test_case); }
+                "FAILED" | "ERROR" => { failed.insert(test_case); }
+                "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
+                _ => {}
+            }
+            continue;
+        }
+        
+        // Fallback to standard pytest pattern
+        if line.starts_with("PASSED") || line.starts_with("FAILED") || 
+           line.starts_with("ERROR") || line.starts_with("SKIPPED") || line.starts_with("XFAIL") {
+            
+            if let Some(captures) = PYTEST_STATUS_RE.captures(line) {
+                let status = captures.get(1).unwrap().as_str();
+                let mut test_case = captures.get(2).unwrap().as_str().to_string();
+                
+                // Additional parsing for FAILED status
+                if status == "FAILED" && test_case.contains(" - ") {
+                    if let Some(pos) = test_case.rfind(" - ") {
+                        test_case = test_case[..pos].to_string();
+                    }
+                }
+                
+                match status {
+                    "PASSED" => { passed.insert(test_case); }
+                    "FAILED" | "ERROR" => { failed.insert(test_case); }
+                    "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
                     _ => {}
                 }
             }
