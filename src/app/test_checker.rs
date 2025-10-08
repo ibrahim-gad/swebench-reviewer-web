@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use std::collections::HashMap;
-use super::types::{LogSearchResults, LogAnalysisResult, TestStatus};
+use super::types::{LogSearchResults, LogAnalysisResult};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleViolationInfo {
@@ -35,7 +35,8 @@ pub fn TestChecker(
     _log_analysis_loading: RwSignal<bool>,
 ) -> impl IntoView {
     if let Some(analysis) = log_analysis_result.get() {
-        leptos::logging::log!("Analysis has {} test statuses", analysis.test_statuses.len());
+        let total = analysis.test_statuses.f2p.len() + analysis.test_statuses.p2p.len();
+        leptos::logging::log!("Analysis has {} test statuses", total);
         leptos::logging::log!("Rule violations in analysis:");
         
         if analysis.rule_violations.c1_failed_in_base_present_in_p2p.has_problem {
@@ -56,28 +57,29 @@ pub fn TestChecker(
     leptos::logging::log!("F2P tests count: {}", fail_to_pass_tests.get().len());
     leptos::logging::log!("P2P tests count: {}", pass_to_pass_tests.get().len());
 
-    // Helper function to get test status from analysis result for a specific stage - fixed to take analysis as parameter
-    let get_test_status_for_stage = move |test_name: &str, test_type: &str, stage: &str, analysis: &Option<LogAnalysisResult>| -> Option<TestStatus> {
+    // Helper to fetch a stage value from grouped statuses
+    let get_grouped_stage = move |test_name: &str, test_type: &str, stage: &str, analysis: &Option<LogAnalysisResult>| -> String {
         if let Some(analysis) = analysis {
-            let stage_test_name = format!("{}_{}", test_name, stage);
-            analysis.test_statuses.iter()
-                .find(|status| status.test_name == stage_test_name && status.r#type == test_type)
-                .cloned()
+            let opt = if test_type == "fail_to_pass" {
+                analysis.test_statuses.f2p.get(test_name)
+            } else {
+                analysis.test_statuses.p2p.get(test_name)
+            };
+            if let Some(summary) = opt {
+                match stage {
+                    "base" => summary.base.clone(),
+                    "before" => summary.before.clone(),
+                    "after" => summary.after.clone(),
+                    "agent" => summary.agent.clone(),
+                    "report" => summary.report.clone(),
+                    _ => "missing".to_string(),
+                }
+            } else {
+                "missing".to_string()
+            }
         } else {
-            None
+            "missing".to_string()
         }
-    };
-
-    // Helper function to get all stage statuses for a test - fixed to take analysis as parameter
-    let get_all_stage_statuses = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> HashMap<String, Option<TestStatus>> {
-        let mut statuses = HashMap::new();
-        let stages = ["base", "before", "after", "agent", "report"];
-        
-        for stage in &stages {
-            statuses.insert(stage.to_string(), get_test_status_for_stage(test_name, test_type, stage, analysis));
-        }
-        
-        statuses
     };
 
     let get_violated_rules = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> Vec<RuleViolationInfo> {
@@ -181,33 +183,17 @@ pub fn TestChecker(
 
     // Memoized status computation for all fail_to_pass tests - updated to include violated rules
     let fail_to_pass_statuses = Memo::new({
-        let get_all_stage_statuses = get_all_stage_statuses.clone();
         let get_violated_rules = get_violated_rules.clone();
         let fail_to_pass_tests = fail_to_pass_tests.clone();
         move |_| {
             let analysis = log_analysis_result.get();
             let mut statuses = HashMap::new();
             for test_name in &fail_to_pass_tests.get() {
-                let stage_statuses = get_all_stage_statuses(test_name, "fail_to_pass", &analysis);
                 let violated_rules = get_violated_rules(test_name, "fail_to_pass", &analysis);
                 
-                let base_status = stage_statuses.get("base")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let before_status = stage_statuses.get("before")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let after_status = stage_statuses.get("after")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
+                let base_status = get_grouped_stage(test_name, "fail_to_pass", "base", &analysis);
+                let before_status = get_grouped_stage(test_name, "fail_to_pass", "before", &analysis);
+                let after_status = get_grouped_stage(test_name, "fail_to_pass", "after", &analysis);
                 
                 statuses.insert(
                     test_name.clone(),
@@ -220,33 +206,17 @@ pub fn TestChecker(
 
     // Memoized status computation for all pass_to_pass tests - updated to include violated rules
     let pass_to_pass_statuses = Memo::new({
-        let get_all_stage_statuses = get_all_stage_statuses.clone();
         let get_violated_rules = get_violated_rules.clone();
         let pass_to_pass_tests = pass_to_pass_tests.clone();
         move |_| {
             let analysis = log_analysis_result.get();
             let mut statuses = HashMap::new();
             for test_name in &pass_to_pass_tests.get() {
-                let stage_statuses = get_all_stage_statuses(test_name, "pass_to_pass", &analysis);
                 let violated_rules = get_violated_rules(test_name, "pass_to_pass", &analysis);
                 
-                let base_status = stage_statuses.get("base")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let before_status = stage_statuses.get("before")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let after_status = stage_statuses.get("after")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
+                let base_status = get_grouped_stage(test_name, "pass_to_pass", "base", &analysis);
+                let before_status = get_grouped_stage(test_name, "pass_to_pass", "before", &analysis);
+                let after_status = get_grouped_stage(test_name, "pass_to_pass", "after", &analysis);
                 
                 statuses.insert(
                     test_name.clone(),

@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::api::rust_log_parser::RustLogParser;
-use crate::app::types::{TestStatus, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
+use crate::app::types::{StageStatusSummary, GroupedTestStatuses, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
 // Helper function to check if diff content contains an exact test name
 fn contains_exact_test_name(diff_content: &str, test_name: &str) -> bool {
@@ -233,90 +233,30 @@ impl LogParser {
             report_data
         );
 
-        // Generate comprehensive test statuses for all stages
-        let mut test_statuses = Vec::new();
-        
-        // Generate test statuses for all stages (base, before, after, agent, report)
+        // Build grouped test statuses structure
+        let mut f2p: HashMap<String, StageStatusSummary> = HashMap::new();
+        let mut p2p: HashMap<String, StageStatusSummary> = HashMap::new();
+
         for test_name in fail_to_pass_tests {
-            // Base stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_base", test_name),
-                status: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // Before stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_before", test_name),
-                status: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // After stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_after", test_name),
-                status: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // Agent stage (if available)
-            if agent_parsed.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_agent", test_name),
-                    status: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "fail_to_pass".to_string(),
-                });
-            }
-            
-            // Report stage (if available)
-            if report_data.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_report", test_name),
-                    status: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "fail_to_pass".to_string(),
-                });
-            }
+            let summary = StageStatusSummary {
+                base: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                before: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                after: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                agent: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                report: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+            };
+            f2p.insert(test_name.clone(), summary);
         }
-        
+
         for test_name in pass_to_pass_tests {
-            // Base stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_base", test_name),
-                status: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // Before stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_before", test_name),
-                status: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // After stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_after", test_name),
-                status: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // Agent stage (if available)
-            if agent_parsed.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_agent", test_name),
-                    status: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "pass_to_pass".to_string(),
-                });
-            }
-            
-            // Report stage (if available)
-            if report_data.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_report", test_name),
-                    status: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "pass_to_pass".to_string(),
-                });
-            }
+            let summary = StageStatusSummary {
+                base: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                before: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                after: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                agent: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                report: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+            };
+            p2p.insert(test_name.clone(), summary);
         }
 
         // Debug info with all stages
@@ -361,7 +301,7 @@ impl LogParser {
         };
 
         LogAnalysisResult {
-            test_statuses,
+            test_statuses: GroupedTestStatuses { f2p, p2p },
             rule_violations,
             debug_info,
         }
@@ -998,11 +938,9 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         match log_checker.analyze_logs(&file_paths, "rust", &fail_to_pass_tests, &pass_to_pass_tests) {
             Ok(result) => {
                 println!("Log analysis successful!");
-                println!("Test statuses: {} tests", result.test_statuses.len());
-                for status in &result.test_statuses {
-                    println!("  {}: {} ({})", status.test_name, status.status, status.r#type);
-                }
-                assert!(result.test_statuses.len() > 0, "Should have found test statuses");
+                let total = result.test_statuses.f2p.len() + result.test_statuses.p2p.len();
+                println!("Test statuses: {} tests (grouped)", total);
+                assert!(total > 0, "Should have found test statuses");
             },
             Err(e) => {
                 panic!("Log analysis failed: {}", e);
