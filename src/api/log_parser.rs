@@ -5,128 +5,11 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::api::rust_log_parser::RustLogParser;
+use crate::api::python_log_parser::PythonLogParser;
+use crate::api::test_detection;
 use crate::app::types::{TestStatus, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
-// Helper function to check if diff content contains an exact test name
-// This function performs precise matching to avoid false positives from substring matches
-fn contains_exact_test_name(diff_content: &str, test_name: &str) -> bool {
-    use regex::Regex;
-    use lazy_static::lazy_static;
-    
-    lazy_static! {
-        // Enhanced regex to match various function declaration formats
-        static ref FUNCTION_DECLARATION_RE: Regex = Regex::new(
-            r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]*>)?\s*\("
-        ).unwrap();
-        
-        // Regex to match test attribute annotations
-        static ref TEST_ATTRIBUTE_RE: Regex = Regex::new(
-            r"(?m)^\s*#\[test\]\s*(?:\n\s*)*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*"
-        ).unwrap();
-        
-        // Regex to match mod declarations (for module path matching)
-        static ref MOD_DECLARATION_RE: Regex = Regex::new(
-            r"(?m)^\s*(?:pub\s+)?mod\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*[{;]"
-        ).unwrap();
-    }
-    
-    // Split the test name to handle module paths like "test_module::test_function"
-    let test_parts: Vec<&str> = test_name.split("::").collect();
-    let function_name = test_parts.last().unwrap_or(&test_name);
-    
-    // 1. Check for exact function name matches in function declarations
-    for caps in FUNCTION_DECLARATION_RE.captures_iter(diff_content) {
-        if let Some(found_fn_name) = caps.get(1) {
-            if found_fn_name.as_str() == *function_name {
-                return true;
-            }
-        }
-    }
-    
-    // 2. Check for test attribute with matching function name
-    for caps in TEST_ATTRIBUTE_RE.captures_iter(diff_content) {
-        if let Some(found_fn_name) = caps.get(1) {
-            if found_fn_name.as_str() == *function_name {
-                return true;
-            }
-        }
-    }
-    
-    // 3. For module paths, check if the full path exists
-    if test_name.contains("::") {
-        // Try to match the full module path
-        let escaped_test_name = regex::escape(test_name);
-        let full_path_regex = Regex::new(&format!(
-            r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+{}\s*(?:<[^>]*>)?\s*\(",
-            escaped_test_name
-        )).unwrap_or_else(|_| Regex::new(r"$^").unwrap()); // fallback to never-matching regex
-        
-        if full_path_regex.is_match(diff_content) {
-            return true;
-        }
-        
-        // Also check for the module path structure
-        let module_parts = &test_parts[..test_parts.len().saturating_sub(1)];
-        if !module_parts.is_empty() {
-            let mut found_all_modules = true;
-            for module in module_parts {
-                let module_regex = Regex::new(&format!(
-                    r"(?m)^\s*(?:pub\s+)?mod\s+{}\s*[{{;]",
-                    regex::escape(module)
-                )).unwrap_or_else(|_| Regex::new(r"$^").unwrap());
-                
-                if !module_regex.is_match(diff_content) {
-                    found_all_modules = false;
-                    break;
-                }
-            }
-            
-            // If we found all modules and the function, it's a match
-            if found_all_modules {
-                let function_in_module_regex = Regex::new(&format!(
-                    r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+{}\s*(?:<[^>]*>)?\s*\(",
-                    regex::escape(function_name)
-                )).unwrap_or_else(|_| Regex::new(r"$^").unwrap());
-                
-                if function_in_module_regex.is_match(diff_content) {
-                    return true;
-                }
-            }
-        }
-    }
-    
-    // 4. Additional check for word boundaries to ensure exact matches
-    // This prevents partial matches like "test_foo" matching "test_foobar"
-    let word_boundary_regex = Regex::new(&format!(
-        r"\b{}\b",
-        regex::escape(function_name)
-    )).unwrap_or_else(|_| Regex::new(r"$^").unwrap());
-    
-    // Only consider it a match if it appears in a function context
-    let lines: Vec<&str> = diff_content.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        if word_boundary_regex.is_match(line) {
-            // Check if this line or nearby lines contain function declaration keywords
-            let context_start = i.saturating_sub(2);
-            let context_end = (i + 3).min(lines.len());
-            let context = lines[context_start..context_end].join("\n");
-            
-            if context.contains("fn ") || context.contains("#[test]") || context.contains("mod ") {
-                // Verify it's actually a function declaration, not just a reference
-                let fn_declaration_regex = Regex::new(&format!(
-                    r"(?m)^\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+{}\s*(?:<[^>]*>)?\s*\(",
-                    regex::escape(function_name)
-                )).unwrap_or_else(|_| Regex::new(r"$^").unwrap());
-                
-                if fn_declaration_regex.is_match(&context) {
-                    return true;
-                }
-            }
-        }
-    }
-    
-    false
-}
+
 
 // Trait for language-specific log parsers
 pub trait LogParserTrait {
@@ -170,6 +53,9 @@ impl LogParser {
         
         // Register Rust parser
         parsers.insert("rust".to_string(), Box::new(RustLogParser::new()));
+        
+        // Register Python parser
+        parsers.insert("python".to_string(), Box::new(PythonLogParser::new()));
         
         Self { parsers }
     }
@@ -254,6 +140,7 @@ impl LogParser {
             after_log.unwrap(),
             report_data.as_ref(),
             file_paths,
+            language,
         );
 
         Ok(analysis_result)
@@ -299,6 +186,7 @@ impl LogParser {
         after_path: &str,
         report_data: Option<&serde_json::Value>,
         file_paths: &[String],
+        language: &str,
     ) -> LogAnalysisResult {
         let universe: Vec<String> = pass_to_pass_tests.iter()
             .chain(fail_to_pass_tests.iter())
@@ -325,7 +213,7 @@ impl LogParser {
             &base_s, &before_s, &after_s, &agent_s, &report_s,
             fail_to_pass_tests, pass_to_pass_tests,
             base_path, before_path, after_path, file_paths,
-            report_data
+            report_data, language
         );
 
         // Generate comprehensive test statuses for all stages
@@ -590,6 +478,7 @@ impl LogParser {
         after_path: &str,
         file_paths: &[String],
         report_data: Option<&serde_json::Value>,
+        language: &str,
     ) -> (RuleViolations, HashMap<String, Vec<String>>) {
         println!("Performing rule checks...");
         
@@ -837,17 +726,26 @@ impl LogParser {
                                 f2p_test
                             };
                             
-                            if contains_exact_test_name(&diff_content, test_name_to_search) {
+                            let test_found_in_source = test_detection::contains_exact_test_name(&diff_content, test_name_to_search, language);
+                            
+                            if test_found_in_source {
                                 // Check if this test also appears in test diffs
-                                if !test_diff_contents.is_empty() && contains_exact_test_name(&test_diff_contents, test_name_to_search) {
+                                let test_found_in_test_diffs = if !test_diff_contents.is_empty() {
+                                    test_detection::contains_exact_test_name(&test_diff_contents, test_name_to_search, language)
+                                } else {
+                                    false
+                                };
+                                
+                                if test_found_in_test_diffs {
                                     println!("F2P test '{}' found in both golden source and test diffs - not a violation", f2p_test);
                                 } else {
+                                    let search_term = if language == "python" { f2p_test } else { test_name_to_search };
                                     let violation = format!("{} (found as '{}' in {} but not in test diffs)", 
-                                                          f2p_test, test_name_to_search, 
+                                                          f2p_test, search_term, 
                                                           golden_diff.split('/').last().unwrap_or(golden_diff));
                                     c7_hits.push(violation);
                                     println!("C7 violation: F2P test '{}' found as '{}' in golden source diff '{}' but not in test diffs", 
-                                             f2p_test, test_name_to_search, golden_diff);
+                                             f2p_test, search_term, golden_diff);
                                 }
                             }
                         }
