@@ -19,6 +19,7 @@ pub mod log_search_results;
 pub mod deliverable_checker_interface;
 pub mod deliverable_checker;
 pub mod playground;
+pub mod report_tab;
 use deliverable_checker::{DeliverableCheckerPage, DeliverableCheckerPageProps};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {

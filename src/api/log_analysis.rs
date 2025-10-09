@@ -40,6 +40,61 @@ pub fn search_logs(file_paths: Vec<String>, test_name: String) -> Result<LogSear
     })
 }
 
+pub fn search_agent_log(file_paths: Vec<String>, test_name: String) -> Result<Vec<SearchResult>, String> {
+    use tempfile::TempDir;
+    use std::path::PathBuf;
+    use std::fs;
+    // Resolve relative paths to absolute under base_temp_dir
+    let temp_dir = TempDir::new().map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    let temp_path = temp_dir.path().to_string_lossy().to_string();
+    let base_temp_dir = std::path::Path::new(&temp_path).parent().unwrap().join("swe-reviewer-temp");
+
+    let abs_paths: Vec<PathBuf> = file_paths.iter().map(|rel| base_temp_dir.join(rel)).collect();
+    let agent_log = abs_paths.iter().find(|p| {
+        let s = p.to_string_lossy().to_lowercase();
+        s.contains("post_agent_patch") || s.ends_with("agent.log")
+    });
+
+    if let Some(path) = agent_log {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read agent log {}: {}", path.to_string_lossy(), e))?;
+        Ok(search_in_content(&content, &test_name))
+    } else {
+        Ok(vec![])
+    }
+}
+
+fn search_in_content(content: &str, test_name: &str) -> Vec<SearchResult> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut results = Vec::new();
+    let search_terms = get_search_terms(test_name);
+    for (line_number, line) in lines.iter().enumerate() {
+        let mut found_match = false;
+        for search_term in &search_terms {
+            if line.contains(search_term) { found_match = true; break; }
+        }
+        if found_match {
+            let context_before: Vec<String> = lines.iter()
+                .skip(line_number.saturating_sub(5))
+                .take(5.min(line_number))
+                .map(|s| s.to_string())
+                .collect();
+            let context_after: Vec<String> = lines.iter()
+                .skip(line_number + 1)
+                .take(5)
+                .map(|s| s.to_string())
+                .collect();
+            results.push(SearchResult {
+                line_number: line_number + 1,
+                line_content: line.to_string(),
+                context_before,
+                context_after,
+            });
+        }
+    }
+    results
+}
+
 fn search_in_log_file(file_path: &str, test_name: &str) -> Result<Vec<SearchResult>, String> {
     use std::fs;
     
