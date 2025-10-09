@@ -75,10 +75,10 @@ pub fn TestChecker(
                     _ => "missing".to_string(),
                 }
             } else {
-                "missing".to_string()
+                "not_supported".to_string()
             }
         } else {
-            "missing".to_string()
+            "not_supported".to_string()
         }
     };
 
@@ -145,22 +145,7 @@ pub fn TestChecker(
                 }
             }
             
-            // C6: Test marked as failed in report but passing in agent
-            if rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.has_problem {
-                let matches = rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.examples.iter().any(|example| {
-                    // For C6, the example contains extra text, so we need to check if test_name is contained
-                    let clean_example = example.split(" (").next().unwrap_or(example);
-                    let match_result = clean_example == test_name;
-                    match_result
-                });
-                if matches {
-                    violated_rules.push(RuleViolationInfo::new(
-                        "c6_test_marked_failed_in_report_but_passing_in_agent",
-                        "Tests marked as failed in report but passing in agent log",
-                        &rule_checks.c6_test_marked_failed_in_report_but_passing_in_agent.examples,
-                    ));
-                }
-            }
+            // Note: C6 is intentionally excluded from test list highlighting/sorting.
             
             // C7: F2P tests in golden source diff
             if test_type == "fail_to_pass" && rule_checks.c7_f2p_tests_in_golden_source_diff.has_problem {

@@ -9,6 +9,12 @@ pub async fn handle_search_logs(file_paths: Vec<String>, test_name: String) -> R
     Ok(search_logs(file_paths, test_name).unwrap())
 }
 
+#[server]
+pub async fn handle_search_agent_logs(file_paths: Vec<String>, test_name: String) -> Result<Vec<super::types::SearchResult>, ServerFnError> {
+    use crate::api::log_analysis::{search_agent_log};
+    Ok(search_agent_log(file_paths, test_name).unwrap())
+}
+
 pub fn search_for_test(
     result: RwSignal<Option<ProcessingResult>>,
     test_name: String,

@@ -80,6 +80,8 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         ("before".to_string(), 0usize),
         ("after".to_string(), 0usize),
     ]));
+    
+    let report_selected_test_name = RwSignal::new(String::new());
 
     let _update_stage_status = move |stage: ProcessingStage, status: StageStatus| {
         stages.update(|stages| {
@@ -201,6 +203,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         ]));
         log_analysis_result.set(None);
         log_analysis_loading.set(false);
+        report_selected_test_name.set(String::new());
     };
 
     Effect::new(move |_| {
@@ -445,11 +448,12 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                     search_result_indices=search_result_indices
                     file_contents=file_contents
                     loading_files=loading_files
-                    loaded_file_types=loaded_file_types
-                    result=result
                     reset_state=reset_state
                     log_analysis_result=log_analysis_result
                     log_analysis_loading=log_analysis_loading
+                    loaded_file_types=loaded_file_types
+                    result=result
+                    report_selected_test_name=report_selected_test_name
                 />
             </Show>
         </div>

@@ -7,6 +7,11 @@ use super::log_search_results::LogSearchResults as LogSearchResultsComponent;
 use super::file_viewer::FileViewer;
 use super::types::LoadedFileTypes;
 use super::test_checker::RuleViolationInfo;
+use super::report_tab::ReportTab;
+#[cfg(feature = "hydrate")]
+use web_sys;
+#[cfg(feature = "hydrate")]
+use wasm_bindgen_futures;
 
 #[component]
 pub fn DeliverableCheckerInterface(
@@ -29,11 +34,13 @@ pub fn DeliverableCheckerInterface(
     log_analysis_loading: RwSignal<bool>,
     loaded_file_types: RwSignal<LoadedFileTypes>,
     result: RwSignal<Option<super::types::ProcessingResult>>,
+    report_selected_test_name: RwSignal<String>,
 ) -> impl IntoView {
     let navigate_fn = use_navigate();
     let manual_tab_active = move || active_main_tab.get() == "manual_checker";
     let playground_tab_active = move || active_main_tab.get() == "playground";
     let input_tab_active = move || active_main_tab.get() == "input";
+    let report_tab_active = move || active_main_tab.get() == "report";
     let get_selected_test_violations = move || -> Vec<RuleViolationInfo> {
         let analysis = log_analysis_result.get();
         if let Some(analysis) = analysis {
@@ -158,6 +165,17 @@ pub fn DeliverableCheckerInterface(
                         result=result
                     />
                 }.into_any()
+            } else if report_tab_active() {
+                view! {
+                    <ReportTab
+                        result=result
+                        file_contents=file_contents
+                        loading_files=loading_files
+                        loaded_file_types=loaded_file_types
+                        log_analysis_result=log_analysis_result
+                        selected_test_name=report_selected_test_name
+                    />
+                }.into_any()
             } else if playground_tab_active() {
                 use super::playground::Playground;
                 view! {
@@ -249,6 +267,22 @@ pub fn DeliverableCheckerInterface(
                                     </Show>
                                 </div>
                             </button>
+                            <button
+                                on:click=move |_| {
+                                    active_main_tab.set("report".to_string());
+                                }
+                                class=move || {
+                                    if report_tab_active() {
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                                            .to_string()
+                                    } else {
+                                        "px-5 py-1 rounded font-medium text-sm transition-all duration-200 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600"
+                                            .to_string()
+                                    }
+                                }
+                            >
+                                Report.json
+                            </button>
                                 <button
                                     on:click=move |_| {
                                         active_main_tab.set("playground".to_string());
@@ -338,6 +372,21 @@ pub fn DeliverableCheckerInterface(
                                             
                                             if let Some(name) = test_name {
                                                 leptos::logging::log!("Copying test name: {}", name);
+                                                #[cfg(feature = "hydrate")]
+                                                {
+                                                    // Use web_sys to copy to clipboard
+                                                    if let Some(window) = web_sys::window() {
+                                                        let navigator = window.navigator();
+                                                        let clipboard = navigator.clipboard();
+                                                        let promise = clipboard.write_text(&name);
+                                                        let future = wasm_bindgen_futures::JsFuture::from(promise);
+                                                        wasm_bindgen_futures::spawn_local(async move {
+                                                            if let Err(e) = future.await {
+                                                                leptos::logging::log!("Failed to copy to clipboard: {:?}", e);
+                                                            }
+                                                        });
+                                                    }
+                                                }
                                             }
                                         }
                                     >
@@ -356,6 +405,48 @@ pub fn DeliverableCheckerInterface(
                                         }).collect_view()
                                     }}
                                 </div>
+                            </div>
+                        }.into_any()}
+                    </Show>
+
+                    // Copy Selected Test Name for Report Tab
+                    <Show
+                        when=report_tab_active
+                    >
+                        {view! {
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-gray-600 dark:text-gray-400 font-mono max-w-xs truncate">
+                                    {move || report_selected_test_name.get()}
+                                </span>
+                                <button
+                                    class="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                    title="Copy test name"
+                                    on:click=move |_| {
+                                        let test_name = report_selected_test_name.get();
+                                        if !test_name.is_empty() {
+                                            leptos::logging::log!("Copying test name: {}", test_name);
+                                            #[cfg(feature = "hydrate")]
+                                            {
+                                                // Use web_sys to copy to clipboard
+                                                if let Some(window) = web_sys::window() {
+                                                    let navigator = window.navigator();
+                                                    let clipboard = navigator.clipboard();
+                                                    let promise = clipboard.write_text(&test_name);
+                                                    let future = wasm_bindgen_futures::JsFuture::from(promise);
+                                                    wasm_bindgen_futures::spawn_local(async move {
+                                                        if let Err(e) = future.await {
+                                                            leptos::logging::log!("Failed to copy to clipboard: {:?}", e);
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                </button>
                             </div>
                         }.into_any()}
                     </Show>
