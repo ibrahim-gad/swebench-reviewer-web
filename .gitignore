@@ -30,7 +30,9 @@ google-credentials.json
 
 
 debug_*.rs
+debug_*.rs
 *_debug.rs
 test_*.rs
+
+# Examples directory
 examples/
-examples/*.rs
