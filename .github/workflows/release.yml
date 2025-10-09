@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-binstall
+        run: |
+          wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+          tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz
+          cp cargo-binstall ~/.cargo/bin/
+
+      - name: Install cargo-leptos
+        run: cargo binstall cargo-leptos -y
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build release binary
+        run: cargo leptos build --release -vv
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp target/release/swe-reviewer-web release-artifacts/
+          cp -r target/site release-artifacts/
+
+      - name: Create tarball
+        run: |
+          cd release-artifacts
+          tar -czf ../swe-reviewer-web-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz *
+          cd ..
+
+      - name: Generate checksums
+        run: |
+          sha256sum swe-reviewer-web-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            swe-reviewer-web-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+            checksums.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
