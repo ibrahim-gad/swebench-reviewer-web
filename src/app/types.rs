@@ -121,7 +121,7 @@ pub enum StageStatus {
 // Log analysis types
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogAnalysisResult {
-    pub test_statuses: Vec<TestStatus>,
+    pub test_statuses: GroupedTestStatuses,
     pub rule_violations: RuleViolations,
     pub debug_info: DebugInfo,
 }
@@ -159,10 +159,18 @@ pub struct LogCount {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct TestStatus {
-    pub test_name: String,
-    pub status: String, // "passed", "failed", "ignored", "missing"
-    pub r#type: String, // "fail_to_pass" or "pass_to_pass"
+pub struct StageStatusSummary {
+    pub base: String,
+    pub before: String,
+    pub after: String,
+    pub agent: String,
+    pub report: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct GroupedTestStatuses {
+    pub f2p: std::collections::HashMap<String, StageStatusSummary>,
+    pub p2p: std::collections::HashMap<String, StageStatusSummary>,
 }
 
 #[derive(Clone, Default)]

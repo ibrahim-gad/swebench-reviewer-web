@@ -7,15 +7,15 @@ use super::log_parser::{LogParserTrait, ParsedLog};
 
 // Compile regex patterns once at module level to avoid repeated compilation
 lazy_static! {
-    // Case-insensitive, include error status, allow trailing whitespace
-    static ref TEST_LINE_RE: Regex = Regex::new(r"(?i)\btest\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s*$")
+    // Case-insensitive, include error status, allow trailing whitespace, handle line numbers
+    static ref TEST_LINE_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s*$")
         .expect("Failed to compile TEST_LINE_RE regex");
 
     // Pattern for mixed format: "test name ... status additional_content"
-    static ref TEST_MIXED_FORMAT_RE: Regex = Regex::new(r"(?i)\btest\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s+(.+)")
+    static ref TEST_MIXED_FORMAT_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s+(.+)")
         .expect("Failed to compile TEST_MIXED_FORMAT_RE regex");
 
-    static ref TEST_START_RE: Regex = Regex::new(r"(?i)\btest\s+(.+?)\s+\.\.\.\s*(.*?)$")
+    static ref TEST_START_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+(.+?)\s+\.\.\.\s*(.*?)$")
         .expect("Failed to compile TEST_START_RE regex");
 
     static ref STATUS_RE: Regex = Regex::new(r"(?i)\b(ok|failed|ignored|error)\b")
@@ -28,20 +28,20 @@ lazy_static! {
     static ref STATUS_AT_START_RE: Regex = Regex::new(r"(?i)^(ok|FAILED|ignored|error)")
         .expect("Failed to compile STATUS_AT_START_RE regex");
 
-    static ref ANOTHER_TEST_RE: Regex = Regex::new(r"(?i)\btest\s+[^\s]+\s+\.\.\.\s*")
+    static ref ANOTHER_TEST_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+[^\s]+\s+\.\.\.\s*")
         .expect("Failed to compile ANOTHER_TEST_RE regex");
 
-    static ref TEST_WITH_O_RE: Regex = Regex::new(r"(?i)\btest\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*o\s*$")
+    static ref TEST_WITH_O_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*o\s*$")
         .expect("Failed to compile TEST_WITH_O_RE regex");
 
-    static ref TEST_STARTS_RE: Regex = Regex::new(r"(?i)\btest\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*")
+    static ref TEST_STARTS_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*")
         .expect("Failed to compile TEST_STARTS_RE regex");
 
     static ref STATUS_IN_TEXT_RE: Regex = Regex::new(r"(?i)\b(ok|failed|ignored|error)\b")
         .expect("Failed to compile STATUS_IN_TEXT_RE regex");
 
     // Additional patterns
-    static ref CORRUPTED_TEST_LINE_RE: Regex = Regex::new(r"(?i)(?:line)?test\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*")
+    static ref CORRUPTED_TEST_LINE_RE: Regex = Regex::new(r"(?i)(?:line)?(?:\d+)?test\s+([^\s]+(?:::\w+)*)\s+\.\.\.\s*")
         .expect("Failed to compile CORRUPTED_TEST_LINE_RE regex");
 
     // File boundary hints
@@ -50,8 +50,8 @@ lazy_static! {
     static ref FILE_BOUNDARY_RE_3: Regex = Regex::new(r"(?i)test\s+result:\s+ok\.\s+\d+\s+passed.*for\s+(.+\.(?:rs|fixed))").unwrap();
 
     // Enhanced extraction patterns
-    static ref ENH_TEST_RE_1: Regex = Regex::new(r"(?i)\btest\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
-    static ref ENH_TEST_RE_2: Regex = Regex::new(r"(?i)test\s+([^\s]+)\s+\.\.\.\s+(ok|FAILED|ignored|error)").unwrap();
+    static ref ENH_TEST_RE_1: Regex = Regex::new(r"(?i)(?:\d+)?test\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
+    static ref ENH_TEST_RE_2: Regex = Regex::new(r"(?i)(?:\d+)?test\s+([^\s]+)\s+\.\.\.\s+(ok|FAILED|ignored|error)").unwrap();
     
     // UI test format patterns - handles paths as test names with direct status
     static ref UI_TEST_PATH_RE: Regex = Regex::new(r"(?i)^([^\s]+(?:/[^\s]+)*\.(?:rs|fixed|toml|txt|md)(?:\s+\(revision\s+[^)]+\))?)\s+\.\.\.\s+(ok|FAILED|ignored|error)\s*$").unwrap();
@@ -72,13 +72,13 @@ lazy_static! {
         .expect("Failed to compile FAILURES_BLOCK_RE regex");
 
     // Additional patterns for single-line parsing to avoid repeated compilation
-    static ref SINGLE_LINE_START_RE: Regex = Regex::new(r"(?i)test\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}").unwrap();
-    static ref SINGLE_LINE_NEXT_TEST_RE: Regex = Regex::new(r"(?i)test\s+[^\s]+(?:::[^\s]+)*\s*\.{2,}").unwrap();
+    static ref SINGLE_LINE_START_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+([^\s]+(?:::[^\s]+)*)\s*\.{2,}").unwrap();
+    static ref SINGLE_LINE_NEXT_TEST_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+[^\s]+(?:::[^\s]+)*\s*\.{2,}").unwrap();
     static ref SINGLE_LINE_STATUS_AT_START_RE: Regex = Regex::new(r"(?i)^(ok|FAILED|ignored|error)").unwrap();
-    static ref SIMPLE_PATTERN_RE: Regex = Regex::new(r"(?i)test\s+[^\s]+(?:::[^\s]+)*\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
+    static ref SIMPLE_PATTERN_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+[^\s]+(?:::[^\s]+)*\s*\.{2,}\s*(ok|FAILED|ignored|error)").unwrap();
     
     // Pattern for tests that have diagnostic info after the "..." but before status
-    static ref TEST_WITH_DIAGNOSTICS_RE: Regex = Regex::new(r"(?i)\btest\s+(.+?)\s+\.\.\.\s*(?:error:|$)").unwrap();
+    static ref TEST_WITH_DIAGNOSTICS_RE: Regex = Regex::new(r"(?i)(?:\d+)?test\s+(.+?)\s+\.\.\.\s*(?:error:|$)").unwrap();
 }
 
 pub struct RustLogParser;
@@ -129,7 +129,13 @@ fn looks_single_line_like(text: &str) -> bool {
     // Check if it looks like a UI test format (many path-based test results)
     let has_ui_tests = ui_test_count > 10;
     
-    (line_count <= 3 && test_count > 5) || has_ansi || has_ui_tests
+    // Only treat as single-line if:
+    // 1. Very short logs with many tests (condensed format), OR
+    // 2. Many UI test patterns (path-based tests), OR  
+    // 3. ANSI codes AND it's actually a short log (not just diagnostic output with ANSI)
+    (line_count <= 3 && test_count > 5) || 
+    has_ui_tests || 
+    (has_ansi && line_count <= 10 && test_count >= line_count / 2)
 }
 
 fn looks_nextest_format(text: &str) -> bool {
@@ -950,19 +956,20 @@ fn process_test_status(
 fn extract_test_name_from_nextest_line(full_line: &str) -> String {
     let trimmed = full_line.trim();
     
-    // Simple approach: Just return the full test name as captured by regex
-    // The nextest format is: "PASS [time] full_test_name"
-    // We should preserve the full test name exactly as it appears
+    // Handle "miden-crypto word::tests::..." format - extract just the test part
+    if trimmed.starts_with("miden-crypto ") {
+        return trimmed[13..].trim().to_string(); // 13 = len("miden-crypto ")
+    }
     
-    // Special handling for known patterns in main.json:
-    // 1. "miden-testing kernel_tests::..." -> keep as is
-    // 2. "miden-testing::miden-integration-tests ..." -> keep as is  
-    // 3. "miden-lib ..." -> keep as is
-    // 4. "miden-objects ..." -> keep as is
-    // 5. "miden-tx ..." -> keep as is
-    
-    // For miden crates, the format in main.json matches exactly what's in the log
+    // Handle other miden crate formats with space separator
     if trimmed.starts_with("miden-") {
+        if let Some(space_pos) = trimmed.find(' ') {
+            let test_part = &trimmed[space_pos + 1..];
+            if test_part.contains("::") {
+                return test_part.trim().to_string();
+            }
+        }
+        // If no space or no :: in test part, return the full line
         return trimmed.to_string();
     }
     

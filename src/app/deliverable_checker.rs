@@ -278,6 +278,147 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
         }
     });
 
+    // Reduce nested Show closure depth by erasing types on branches
+    // Build landing view as a type-erased boundary to reduce monomorphization depth
+    let landing_view = move || -> AnyView {
+        view! {
+            <div class="w-full flex flex-col h-full items-center justify-center pb-20">
+                <div class="w-full">
+                    <div class="p-8">
+
+                        <div class="text-center">
+                            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-8">
+                                Deliverable Checker
+                            </h2>
+
+                            <div class="mb-8 space-y-6 flex flex-col items-center">
+
+                                <div class="w-full max-w-2xl">
+                                    <input
+                                        type="text"
+                                        prop:value=move || deliverable_link.get()
+                                        on:input=move |ev| {
+                                            deliverable_link.set(event_target_value(&ev))
+                                        }
+                                        placeholder="Enter Google Drive folder link"
+                                        class="w-full px-4 py-2 text-md border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
+                                        disabled=move || is_processing.get()
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4 justify-center">
+                                <button
+                                    on:click=manual_submit_fn
+                                    disabled=move || {
+                                        is_processing.get()
+                                            || deliverable_link.get().trim().is_empty()
+                                    }
+                                    class="px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full text-lg font-semibold shadow-lg transition-colors disabled:cursor-not-allowed"
+                                >
+                                    Submit
+                                </button>
+                            </div>
+
+                            {move || {
+                                error
+                                    .get()
+                                    .map(|err| {
+                                        view! {
+                                            <div class="flex gap-4 justify-center">
+                                            <div class="w-full max-w-2xl mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                                <p class="text-red-600 dark:text-red-400">{err}</p>
+                                            </div>
+                                            </div>
+                                        }
+                                    }).into_any()
+                            }}
+                        </div>
+
+                        {move || {
+                            if is_processing.get() {
+                                view! {
+                                    <div class="max-w-2xl mx-auto text-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                        <div class="space-x-6 flex flex-row justify-center">
+                                            <div class="flex items-center justify-center gap-2">
+                                                {render_icon(
+                                                    ProcessingStage::Validating,
+                                                    stages
+                                                        .get()
+                                                        .get(&ProcessingStage::Validating)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending),
+                                                )}
+                                                <span class=move || {
+                                                    let status = stages
+                                                        .get()
+                                                        .get(&ProcessingStage::Validating)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending);
+                                                    format!(
+                                                        "text-lg font-medium {}",
+                                                        get_stage_text_class(status),
+                                                    )
+                                                }>Validating</span>
+                                            </div>
+
+                                            <div class="flex items-center justify-center gap-2">
+                                                {render_icon(
+                                                    ProcessingStage::Downloading,
+                                                    stages
+                                                        .get()
+                                                        .get(&ProcessingStage::Downloading)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending),
+                                                )}
+                                                <span class=move || {
+                                                    let status = stages
+                                                        .get()
+                                                        .get(&ProcessingStage::Downloading)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending);
+                                                    format!(
+                                                        "text-lg font-medium {}",
+                                                        get_stage_text_class(status),
+                                                    )
+                                                }>Downloading</span>
+                                            </div>
+
+                                            <div class="flex items-center justify-center gap-2">
+                                                {render_icon(
+                                                    ProcessingStage::LoadingTests,
+                                                    stages
+                                                        .get()
+                                                        .get(&ProcessingStage::LoadingTests)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending),
+                                                )}
+                                                <span class=move || {
+                                                    let status = stages
+                                                        .get()
+                                                        .get(&ProcessingStage::LoadingTests)
+                                                        .cloned()
+                                                        .unwrap_or(StageStatus::Pending);
+                                                    format!(
+                                                        "text-lg font-medium {}",
+                                                        get_stage_text_class(status),
+                                                    )
+                                                }>Loading tests</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {}.into_any()
+                            }
+                        }}
+
+                    </div>
+                </div>
+            </div>
+        }.into_any()
+    };
+
     view! {
         <div class="w-full h-full">
             <Show
@@ -286,145 +427,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
                         && (!fail_to_pass_tests.get().is_empty()
                             || !pass_to_pass_tests.get().is_empty())
                 }
-                fallback=move || {
-                    view! {
-                        <div class="w-full flex flex-col h-full items-center justify-center pb-20">
-                            <div class="w-full">
-                                <div class="p-8">
-
-                                    <div class="text-center">
-                                        <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-8">
-                                            Deliverable Checker
-                                        </h2>
-
-                                        <div class="mb-8 space-y-6 flex flex-col items-center">
-
-                                            <div class="w-full max-w-2xl">
-                                                <input
-                                                    type="text"
-                                                    prop:value=move || deliverable_link.get()
-                                                    on:input=move |ev| {
-                                                        deliverable_link.set(event_target_value(&ev))
-                                                    }
-                                                    placeholder="Enter Google Drive folder link"
-                                                    class="w-full px-4 py-2 text-md border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors"
-                                                    disabled=move || is_processing.get()
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div class="flex gap-4 justify-center">
-                                            <button
-                                                on:click=manual_submit_fn
-                                                disabled=move || {
-                                                    is_processing.get()
-                                                        || deliverable_link.get().trim().is_empty()
-                                                }
-                                                class="px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full text-lg font-semibold shadow-lg transition-colors disabled:cursor-not-allowed"
-                                            >
-                                                Submit
-                                            </button>
-                                        </div>
-
-                                        {move || {
-                                            error
-                                                .get()
-                                                .map(|err| {
-                                                    view! {
-                                                        <div class="flex gap-4 justify-center">
-                                                        <div class="w-full max-w-2xl mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                                                            <p class="text-red-600 dark:text-red-400">{err}</p>
-                                                        </div>
-                                                        </div>
-                                                    }
-                                                })
-                                        }}
-                                    </div>
-
-                                    {move || {
-                                        if is_processing.get() {
-                                            view! {
-                                                <div class="max-w-2xl mx-auto text-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                                                    <div class="space-x-6 flex flex-row justify-center">
-                                                        <div class="flex items-center justify-center gap-2">
-                                                            {render_icon(
-                                                                ProcessingStage::Validating,
-                                                                stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::Validating)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending),
-                                                            )}
-                                                            <span class=move || {
-                                                                let status = stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::Validating)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending);
-                                                                format!(
-                                                                    "text-lg font-medium {}",
-                                                                    get_stage_text_class(status),
-                                                                )
-                                                            }>Validating</span>
-                                                        </div>
-
-                                                        <div class="flex items-center justify-center gap-2">
-                                                            {render_icon(
-                                                                ProcessingStage::Downloading,
-                                                                stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::Downloading)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending),
-                                                            )}
-                                                            <span class=move || {
-                                                                let status = stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::Downloading)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending);
-                                                                format!(
-                                                                    "text-lg font-medium {}",
-                                                                    get_stage_text_class(status),
-                                                                )
-                                                            }>Downloading</span>
-                                                        </div>
-
-                                                        <div class="flex items-center justify-center gap-2">
-                                                            {render_icon(
-                                                                ProcessingStage::LoadingTests,
-                                                                stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::LoadingTests)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending),
-                                                            )}
-                                                            <span class=move || {
-                                                                let status = stages
-                                                                    .get()
-                                                                    .get(&ProcessingStage::LoadingTests)
-                                                                    .cloned()
-                                                                    .unwrap_or(StageStatus::Pending);
-                                                                format!(
-                                                                    "text-lg font-medium {}",
-                                                                    get_stage_text_class(status),
-                                                                )
-                                                            }>Loading tests</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            }
-                                            .into_any()
-                                        } else {
-                                            view! {}.into_any()
-                                        }
-                                    }}
-
-                                </div>
-                            </div>
-                        </div>
-                    }
-                }
+                fallback=move || landing_view()
             >
                 // Report Checker Interface after successful download
                 <DeliverableCheckerInterface
@@ -453,7 +456,7 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
     }
 }
 
-fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
+fn render_icon(_stage: ProcessingStage, status: StageStatus) -> AnyView {
     match status {
         StageStatus::Completed => view! {
             <div class="w-5 h-5">
@@ -471,7 +474,7 @@ fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
                     />
                 </svg>
             </div>
-        },
+        }.into_any(),
         StageStatus::Active => view! {
             <div class="w-5 h-5">
                 <svg class="animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
@@ -490,7 +493,7 @@ fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
                     ></path>
                 </svg>
             </div>
-        },
+        }.into_any(),
         StageStatus::Error => view! {
             <div class="w-5 h-5">
                 <svg
@@ -507,7 +510,7 @@ fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
                     />
                 </svg>
             </div>
-        },
+        }.into_any(),
         StageStatus::Pending => view! {
             <div class="w-5 h-5">
                 <svg
@@ -524,7 +527,7 @@ fn render_icon(_stage: ProcessingStage, status: StageStatus) -> impl IntoView {
                     />
                 </svg>
             </div>
-        },
+        }.into_any(),
     }
 }
 

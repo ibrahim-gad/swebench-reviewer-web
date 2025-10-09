@@ -5,7 +5,11 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::api::rust_log_parser::RustLogParser;
-use crate::app::types::{TestStatus, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
+use crate::api::python_log_parser::PythonLogParser;
+use crate::api::test_detection;
+use crate::app::types::{StageStatusSummary, GroupedTestStatuses, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
+
+
 
 // Trait for language-specific log parsers
 pub trait LogParserTrait {
@@ -49,6 +53,9 @@ impl LogParser {
         
         // Register Rust parser
         parsers.insert("rust".to_string(), Box::new(RustLogParser::new()));
+        
+        // Register Python parser
+        parsers.insert("python".to_string(), Box::new(PythonLogParser::new()));
         
         Self { parsers }
     }
@@ -133,6 +140,7 @@ impl LogParser {
             after_log.unwrap(),
             report_data.as_ref(),
             file_paths,
+            language,
         );
 
         Ok(analysis_result)
@@ -178,6 +186,7 @@ impl LogParser {
         after_path: &str,
         report_data: Option<&serde_json::Value>,
         file_paths: &[String],
+        language: &str,
     ) -> LogAnalysisResult {
         let universe: Vec<String> = pass_to_pass_tests.iter()
             .chain(fail_to_pass_tests.iter())
@@ -204,93 +213,33 @@ impl LogParser {
             &base_s, &before_s, &after_s, &agent_s, &report_s,
             fail_to_pass_tests, pass_to_pass_tests,
             base_path, before_path, after_path, file_paths,
-            report_data
+            report_data, language
         );
 
-        // Generate comprehensive test statuses for all stages
-        let mut test_statuses = Vec::new();
-        
-        // Generate test statuses for all stages (base, before, after, agent, report)
+        // Build grouped test statuses structure
+        let mut f2p: HashMap<String, StageStatusSummary> = HashMap::new();
+        let mut p2p: HashMap<String, StageStatusSummary> = HashMap::new();
+
         for test_name in fail_to_pass_tests {
-            // Base stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_base", test_name),
-                status: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // Before stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_before", test_name),
-                status: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // After stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_after", test_name),
-                status: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "fail_to_pass".to_string(),
-            });
-            
-            // Agent stage (if available)
-            if agent_parsed.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_agent", test_name),
-                    status: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "fail_to_pass".to_string(),
-                });
-            }
-            
-            // Report stage (if available)
-            if report_data.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_report", test_name),
-                    status: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "fail_to_pass".to_string(),
-                });
-            }
+            let summary = StageStatusSummary {
+                base: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                before: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                after: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                agent: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                report: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+            };
+            f2p.insert(test_name.clone(), summary);
         }
-        
+
         for test_name in pass_to_pass_tests {
-            // Base stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_base", test_name),
-                status: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // Before stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_before", test_name),
-                status: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // After stage
-            test_statuses.push(TestStatus {
-                test_name: format!("{}_after", test_name),
-                status: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                r#type: "pass_to_pass".to_string(),
-            });
-            
-            // Agent stage (if available)
-            if agent_parsed.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_agent", test_name),
-                    status: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "pass_to_pass".to_string(),
-                });
-            }
-            
-            // Report stage (if available)
-            if report_data.is_some() {
-                test_statuses.push(TestStatus {
-                    test_name: format!("{}_report", test_name),
-                    status: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
-                    r#type: "pass_to_pass".to_string(),
-                });
-            }
+            let summary = StageStatusSummary {
+                base: base_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                before: before_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                after: after_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                agent: agent_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+                report: report_s.get(test_name).unwrap_or(&"missing".to_string()).clone(),
+            };
+            p2p.insert(test_name.clone(), summary);
         }
 
         // Debug info with all stages
@@ -335,7 +284,7 @@ impl LogParser {
         };
 
         LogAnalysisResult {
-            test_statuses,
+            test_statuses: GroupedTestStatuses { f2p, p2p },
             rule_violations,
             debug_info,
         }
@@ -469,6 +418,7 @@ impl LogParser {
         after_path: &str,
         file_paths: &[String],
         report_data: Option<&serde_json::Value>,
+        language: &str,
     ) -> (RuleViolations, HashMap<String, Vec<String>>) {
         println!("Performing rule checks...");
         
@@ -716,17 +666,26 @@ impl LogParser {
                                 f2p_test
                             };
                             
-                            if diff_content.contains(test_name_to_search) {
+                            let test_found_in_source = test_detection::contains_exact_test_name(&diff_content, test_name_to_search, language);
+                            
+                            if test_found_in_source {
                                 // Check if this test also appears in test diffs
-                                if !test_diff_contents.is_empty() && test_diff_contents.contains(test_name_to_search) {
+                                let test_found_in_test_diffs = if !test_diff_contents.is_empty() {
+                                    test_detection::contains_exact_test_name(&test_diff_contents, test_name_to_search, language)
+                                } else {
+                                    false
+                                };
+                                
+                                if test_found_in_test_diffs {
                                     println!("F2P test '{}' found in both golden source and test diffs - not a violation", f2p_test);
                                 } else {
+                                    let search_term = if language == "python" { f2p_test } else { test_name_to_search };
                                     let violation = format!("{} (found as '{}' in {} but not in test diffs)", 
-                                                          f2p_test, test_name_to_search, 
+                                                          f2p_test, search_term, 
                                                           golden_diff.split('/').last().unwrap_or(golden_diff));
                                     c7_hits.push(violation);
                                     println!("C7 violation: F2P test '{}' found as '{}' in golden source diff '{}' but not in test diffs", 
-                                             f2p_test, test_name_to_search, golden_diff);
+                                             f2p_test, search_term, golden_diff);
                                 }
                             }
                         }
@@ -972,11 +931,9 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         match log_checker.analyze_logs(&file_paths, "rust", &fail_to_pass_tests, &pass_to_pass_tests) {
             Ok(result) => {
                 println!("Log analysis successful!");
-                println!("Test statuses: {} tests", result.test_statuses.len());
-                for status in &result.test_statuses {
-                    println!("  {}: {} ({})", status.test_name, status.status, status.r#type);
-                }
-                assert!(result.test_statuses.len() > 0, "Should have found test statuses");
+                let total = result.test_statuses.f2p.len() + result.test_statuses.p2p.len();
+                println!("Test statuses: {} tests (grouped)", total);
+                assert!(total > 0, "Should have found test statuses");
             },
             Err(e) => {
                 panic!("Log analysis failed: {}", e);

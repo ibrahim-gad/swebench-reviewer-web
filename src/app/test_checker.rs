@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use std::collections::HashMap;
-use super::types::{LogSearchResults, LogAnalysisResult, TestStatus};
+use super::types::{LogSearchResults, LogAnalysisResult};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleViolationInfo {
@@ -35,7 +35,8 @@ pub fn TestChecker(
     _log_analysis_loading: RwSignal<bool>,
 ) -> impl IntoView {
     if let Some(analysis) = log_analysis_result.get() {
-        leptos::logging::log!("Analysis has {} test statuses", analysis.test_statuses.len());
+        let total = analysis.test_statuses.f2p.len() + analysis.test_statuses.p2p.len();
+        leptos::logging::log!("Analysis has {} test statuses", total);
         leptos::logging::log!("Rule violations in analysis:");
         
         if analysis.rule_violations.c1_failed_in_base_present_in_p2p.has_problem {
@@ -56,28 +57,29 @@ pub fn TestChecker(
     leptos::logging::log!("F2P tests count: {}", fail_to_pass_tests.get().len());
     leptos::logging::log!("P2P tests count: {}", pass_to_pass_tests.get().len());
 
-    // Helper function to get test status from analysis result for a specific stage - fixed to take analysis as parameter
-    let get_test_status_for_stage = move |test_name: &str, test_type: &str, stage: &str, analysis: &Option<LogAnalysisResult>| -> Option<TestStatus> {
+    // Helper to fetch a stage value from grouped statuses
+    let get_grouped_stage = move |test_name: &str, test_type: &str, stage: &str, analysis: &Option<LogAnalysisResult>| -> String {
         if let Some(analysis) = analysis {
-            let stage_test_name = format!("{}_{}", test_name, stage);
-            analysis.test_statuses.iter()
-                .find(|status| status.test_name == stage_test_name && status.r#type == test_type)
-                .cloned()
+            let opt = if test_type == "fail_to_pass" {
+                analysis.test_statuses.f2p.get(test_name)
+            } else {
+                analysis.test_statuses.p2p.get(test_name)
+            };
+            if let Some(summary) = opt {
+                match stage {
+                    "base" => summary.base.clone(),
+                    "before" => summary.before.clone(),
+                    "after" => summary.after.clone(),
+                    "agent" => summary.agent.clone(),
+                    "report" => summary.report.clone(),
+                    _ => "missing".to_string(),
+                }
+            } else {
+                "missing".to_string()
+            }
         } else {
-            None
+            "missing".to_string()
         }
-    };
-
-    // Helper function to get all stage statuses for a test - fixed to take analysis as parameter
-    let get_all_stage_statuses = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> HashMap<String, Option<TestStatus>> {
-        let mut statuses = HashMap::new();
-        let stages = ["base", "before", "after", "agent", "report"];
-        
-        for stage in &stages {
-            statuses.insert(stage.to_string(), get_test_status_for_stage(test_name, test_type, stage, analysis));
-        }
-        
-        statuses
     };
 
     let get_violated_rules = move |test_name: &str, test_type: &str, analysis: &Option<LogAnalysisResult>| -> Vec<RuleViolationInfo> {
@@ -163,7 +165,15 @@ pub fn TestChecker(
             // C7: F2P tests in golden source diff
             if test_type == "fail_to_pass" && rule_checks.c7_f2p_tests_in_golden_source_diff.has_problem {
                 let matches = rule_checks.c7_f2p_tests_in_golden_source_diff.examples.iter()
-                    .any(|example| example.contains(test_name));
+                    .any(|example| {
+                        // C7 examples have format: "test_name (found as 'function_name' in file but not in test diffs)"
+                        // Extract the test name before the first " (" to get exact match
+                        if let Some(test_part) = example.split(" (").next() {
+                            test_part == test_name
+                        } else {
+                            example == test_name
+                        }
+                    });
                 if matches {
                     violated_rules.push(RuleViolationInfo::new(
                         "c7_f2p_tests_in_golden_source_diff",
@@ -181,33 +191,17 @@ pub fn TestChecker(
 
     // Memoized status computation for all fail_to_pass tests - updated to include violated rules
     let fail_to_pass_statuses = Memo::new({
-        let get_all_stage_statuses = get_all_stage_statuses.clone();
         let get_violated_rules = get_violated_rules.clone();
         let fail_to_pass_tests = fail_to_pass_tests.clone();
         move |_| {
             let analysis = log_analysis_result.get();
             let mut statuses = HashMap::new();
             for test_name in &fail_to_pass_tests.get() {
-                let stage_statuses = get_all_stage_statuses(test_name, "fail_to_pass", &analysis);
                 let violated_rules = get_violated_rules(test_name, "fail_to_pass", &analysis);
                 
-                let base_status = stage_statuses.get("base")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let before_status = stage_statuses.get("before")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let after_status = stage_statuses.get("after")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
+                let base_status = get_grouped_stage(test_name, "fail_to_pass", "base", &analysis);
+                let before_status = get_grouped_stage(test_name, "fail_to_pass", "before", &analysis);
+                let after_status = get_grouped_stage(test_name, "fail_to_pass", "after", &analysis);
                 
                 statuses.insert(
                     test_name.clone(),
@@ -220,33 +214,17 @@ pub fn TestChecker(
 
     // Memoized status computation for all pass_to_pass tests - updated to include violated rules
     let pass_to_pass_statuses = Memo::new({
-        let get_all_stage_statuses = get_all_stage_statuses.clone();
         let get_violated_rules = get_violated_rules.clone();
         let pass_to_pass_tests = pass_to_pass_tests.clone();
         move |_| {
             let analysis = log_analysis_result.get();
             let mut statuses = HashMap::new();
             for test_name in &pass_to_pass_tests.get() {
-                let stage_statuses = get_all_stage_statuses(test_name, "pass_to_pass", &analysis);
                 let violated_rules = get_violated_rules(test_name, "pass_to_pass", &analysis);
                 
-                let base_status = stage_statuses.get("base")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let before_status = stage_statuses.get("before")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
-                
-                let after_status = stage_statuses.get("after")
-                    .and_then(|s| s.as_ref())
-                    .map(|s| s.status.as_str())
-                    .unwrap_or("ignored")
-                    .to_string();
+                let base_status = get_grouped_stage(test_name, "pass_to_pass", "base", &analysis);
+                let before_status = get_grouped_stage(test_name, "pass_to_pass", "before", &analysis);
+                let after_status = get_grouped_stage(test_name, "pass_to_pass", "after", &analysis);
                 
                 statuses.insert(
                     test_name.clone(),
@@ -257,7 +235,7 @@ pub fn TestChecker(
         }
     });
 
-    // Helper function to render status icon - unchanged
+    // Helper function to render status icon with type erasure to reduce monomorphization depth
     let render_status_icon = move |status: &str| {
         match status {
             "passed" => view! {
@@ -268,7 +246,7 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             "failed" => view! {
                 <div class="w-4 h-4 flex items-center justify-center bg-red-100 dark:bg-red-300 rounded-full">
                     <img 
@@ -277,7 +255,7 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             "missing" => view! {
                 <div class="w-4 h-4 flex items-center justify-center bg-yellow-100 dark:bg-yellow-300 rounded-full">
                     <img 
@@ -286,14 +264,14 @@ pub fn TestChecker(
                         class="w-3 h-3"
                     />
                 </div>
-            },
+            }.into_any(),
             _ => view! {
                 <div class=""><div class=""></div></div>
-            }
+            }.into_any(),
         }
     };
 
-    // Refactored helper function to render status row using precomputed statuses - updated to include violations
+    // Refactored helper function to render status row using precomputed statuses - with type erasure
     let render_status_row = move |test_name: String, test_type: &str| {
         if true {
             let statuses_map = if test_type == "fail_to_pass" {
@@ -309,7 +287,7 @@ pub fn TestChecker(
                         {render_status_icon(before_status)}
                         {render_status_icon(after_status)}
                     </div>
-                }
+                }.into_any()
             } else {
                 view! {
                     <div class="flex items-center gap-1" title="Base | Before | After">
@@ -317,7 +295,7 @@ pub fn TestChecker(
                         {render_status_icon("missing")}
                         {render_status_icon("missing")}
                     </div>
-                }
+                }.into_any()
             }
         } else {
             view! { 
@@ -326,7 +304,7 @@ pub fn TestChecker(
                     {render_status_icon("ignored")}
                     {render_status_icon("ignored")}
                 </div>
-            }
+            }.into_any()
         }
     };
     view! {
@@ -441,7 +419,7 @@ pub fn TestChecker(
                                         {move || render_status_row(test_name_for_status.clone(), "fail_to_pass")}
                                     </div>
                                 </div>
-                            }
+                            }.into_any()
                         }
                     />
                 </div>
@@ -552,7 +530,7 @@ pub fn TestChecker(
                                         {move || render_status_row(test_name_for_status.clone(), "pass_to_pass")}
                                     </div>
                                 </div>
-                            }
+                            }.into_any()
                         }
                     />
                 </div>
