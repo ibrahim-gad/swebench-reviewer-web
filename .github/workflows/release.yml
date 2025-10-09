@@ -19,8 +19,9 @@ jobs:
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: wasm32-unknown-unknown
+
+      - name: Add WASM target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
