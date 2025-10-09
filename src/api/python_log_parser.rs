@@ -27,17 +27,25 @@ impl TestStatus {
 
 // Compile regex patterns once at module level to avoid repeated compilation
 lazy_static! {
-    // PyTest patterns - now includes XFAIL support
+    // PyTest patterns - now includes XFAIL support with better handling
     static ref PYTEST_STATUS_RE: Regex = Regex::new(r"^(PASSED|FAILED|ERROR|SKIPPED|XFAIL)\s+(.+?)(?:\s+-\s+.*)?$")
         .expect("Failed to compile PYTEST_STATUS_RE regex");
     
-    // Enhanced pattern for pytest status lines with better parametrized test support
+    // Enhanced pattern for pytest status lines with better parametrized test support and percentage handling
     static ref PYTEST_ENHANCED_STATUS_RE: Regex = Regex::new(r"^(\d*)(PASSED|FAILED|ERROR|SKIPPED|XFAIL)\s+(.+?)(?:\s+\[\s*\d+%\s*\])?(?:\s+-\s+.*)?$")
         .expect("Failed to compile PYTEST_ENHANCED_STATUS_RE regex");
     
-    // Pattern for parametrized tests with complex parameters
+    // Pattern for parametrized tests with complex parameters - more flexible
     static ref PYTEST_PARAMETRIZED_RE: Regex = Regex::new(r"(.+?)(?:\[([^\]]*)\])?\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL)")  
         .expect("Failed to compile PYTEST_PARAMETRIZED_RE regex");
+    
+    // New pattern for tests with status and percentage in between test name and status
+    static ref PYTEST_STATUS_WITH_PERCENTAGE_RE: Regex = Regex::new(r"^(.+?)\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL)\s+\[\s*\d+%\s*\](?:\s+-\s+.*)?$")
+        .expect("Failed to compile PYTEST_STATUS_WITH_PERCENTAGE_RE regex");
+    
+    // Pattern specifically for XFAIL tests with reason
+    static ref PYTEST_XFAIL_RE: Regex = Regex::new(r"^(\d*)XFAIL\s+(.+?)(?:\s+-\s+(.*))?$")
+        .expect("Failed to compile PYTEST_XFAIL_RE regex");
     
     static ref PYTEST_OPTIONS_RE: Regex = Regex::new(r"(.*?)\[(.*)\]")
         .expect("Failed to compile PYTEST_OPTIONS_RE regex");
@@ -516,6 +524,28 @@ fn parse_log_pytest_v2(log: &str) -> ParsedLog {
     for line in clean_log.lines() {
         let line = line.trim();
         
+        // Try the new pattern for tests with status and percentage first
+        // Example: "tests/test_character_labeling.py::test_get_cypher_labels_various_types[  Item -:Item:Entity] PASSED [ 12%]"
+        if let Some(captures) = PYTEST_STATUS_WITH_PERCENTAGE_RE.captures(line) {
+            let test_case = captures.get(1).unwrap().as_str().to_string();
+            let status = captures.get(2).unwrap().as_str();
+            
+            match status {
+                "PASSED" => { passed.insert(test_case); }
+                "FAILED" | "ERROR" => { failed.insert(test_case); }
+                "SKIPPED" | "XFAIL" => { ignored.insert(test_case); }
+                _ => {}
+            }
+            continue;
+        }
+        
+        // Try XFAIL specific pattern
+        if let Some(captures) = PYTEST_XFAIL_RE.captures(line) {
+            let test_case = captures.get(2).unwrap().as_str().to_string();
+            ignored.insert(test_case);
+            continue;
+        }
+        
         // Check if line starts with test status
         if line.starts_with("PASSED") || line.starts_with("FAILED") || 
            line.starts_with("ERROR") || line.starts_with("SKIPPED") || line.starts_with("XFAIL") {
@@ -834,6 +864,24 @@ test_old_format PASSED
         assert!(result.passed.contains("test_with_ansi_colors"));
         assert!(result.failed.contains("test_with_ansi_fail"));
         assert!(result.passed.contains("test_old_format"));
+    }
+
+    #[test]
+    fn test_parse_log_pytest_v2_edge_cases() {
+        let log_content = r#"
+XFAIL tests/test_initial_setup_logic.py::test_valid_json_output_from_llm - generate_world_building_logic interface updated
+tests/test_character_labeling.py::test_get_cypher_labels_various_types[  Item -:Item:Entity] PASSED [ 12%]
+PASSED tests/test_simple.py::test_basic
+"#;
+
+        let result = parse_log_pytest_v2(log_content);
+        
+        // Check XFAIL test is properly categorized as ignored
+        assert!(result.ignored.contains("tests/test_initial_setup_logic.py::test_valid_json_output_from_llm"));
+        // Check complex parametrized test with percentage
+        assert!(result.passed.contains("tests/test_character_labeling.py::test_get_cypher_labels_various_types[  Item -:Item:Entity]"));
+        // Check simple passed test
+        assert!(result.passed.contains("tests/test_simple.py::test_basic"));
     }
 
     #[test]

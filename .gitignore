@@ -27,3 +27,10 @@ ehthumbs.db
 # google credentials
 google-credentials.json
 .env
+
+
+debug_*.rs
+*_debug.rs
+test_*.rs
+examples/
+examples/*.rs
