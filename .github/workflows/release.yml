@@ -12,19 +12,34 @@ jobs:
   build-and-release:
     name: Build and Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install Node.js dependencies
+        run: npm ci
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Add WASM target
         run: rustup target add wasm32-unknown-unknown
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-binstall
         run: |
@@ -39,6 +54,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
         run: cargo leptos build --release -vv
