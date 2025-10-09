@@ -6,14 +6,20 @@ use std::collections::HashMap;
 #[server]
 pub async fn handle_validate_deliverable(deliverable_link: String) -> Result<ValidationResult, ServerFnError> {
     use crate::api::deliverable::{validate_deliverable_impl};
-    Ok(validate_deliverable_impl(deliverable_link).await.unwrap())
+    match validate_deliverable_impl(deliverable_link).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(ServerFnError::ServerError(format!("Failed to validate deliverable: {}", e)))
+    }
 }
 
 
 #[server]
 pub async fn handle_download_deliverable(files_to_download: Vec<FileInfo>, folder_id: String) -> Result<DownloadResult, ServerFnError> {
     use crate::api::deliverable::{download_deliverable_impl};
-    Ok(download_deliverable_impl(files_to_download, folder_id).await.unwrap())
+    match download_deliverable_impl(files_to_download, folder_id).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(ServerFnError::ServerError(format!("Failed to download deliverable: {}", e)))
+    }
 }
 
 

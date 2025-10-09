@@ -5,33 +5,11 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::api::rust_log_parser::RustLogParser;
+use crate::api::python_log_parser::PythonLogParser;
+use crate::api::test_detection;
 use crate::app::types::{StageStatusSummary, GroupedTestStatuses, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
-// Helper function to check if diff content contains an exact test name
-fn contains_exact_test_name(diff_content: &str, test_name: &str) -> bool {
-    // Split the test name to handle module paths like "test_module::test_function"
-    let test_parts: Vec<&str> = test_name.split("::").collect();
-    let function_name = test_parts.last().unwrap_or(&test_name);
-    
-    // Look for exact matches in various test declaration patterns
-    let patterns = [
-        format!("fn {}(", function_name),           // fn test_name(
-        format!("fn {} (", function_name),          // fn test_name (
-        format!("fn {}\n", function_name),          // fn test_name\n
-        format!("fn {}\r", function_name),          // fn test_name\r
-        format!("fn {}\t", function_name),          // fn test_name\t  
-        format!("fn {}{{", function_name),          // fn test_name{
-        format!("async fn {}(", function_name),     // async fn test_name(
-        format!("async fn {} (", function_name),    // async fn test_name (
-    ];
-    
-    patterns.iter().any(|pattern| diff_content.contains(pattern)) ||
-    // Also check for the full test name in test declarations
-    diff_content.contains(&format!("fn {}(", test_name)) ||
-    diff_content.contains(&format!("fn {} (", test_name)) ||
-    diff_content.contains(&format!("async fn {}(", test_name)) ||
-    diff_content.contains(&format!("async fn {} (", test_name))
-}
+
 
 // Trait for language-specific log parsers
 pub trait LogParserTrait {
@@ -75,6 +53,9 @@ impl LogParser {
         
         // Register Rust parser
         parsers.insert("rust".to_string(), Box::new(RustLogParser::new()));
+        
+        // Register Python parser
+        parsers.insert("python".to_string(), Box::new(PythonLogParser::new()));
         
         Self { parsers }
     }
@@ -159,6 +140,7 @@ impl LogParser {
             after_log.unwrap(),
             report_data.as_ref(),
             file_paths,
+            language,
         );
 
         Ok(analysis_result)
@@ -204,6 +186,7 @@ impl LogParser {
         after_path: &str,
         report_data: Option<&serde_json::Value>,
         file_paths: &[String],
+        language: &str,
     ) -> LogAnalysisResult {
         let universe: Vec<String> = pass_to_pass_tests.iter()
             .chain(fail_to_pass_tests.iter())
@@ -230,7 +213,7 @@ impl LogParser {
             &base_s, &before_s, &after_s, &agent_s, &report_s,
             fail_to_pass_tests, pass_to_pass_tests,
             base_path, before_path, after_path, file_paths,
-            report_data
+            report_data, language
         );
 
         // Build grouped test statuses structure
@@ -435,6 +418,7 @@ impl LogParser {
         after_path: &str,
         file_paths: &[String],
         report_data: Option<&serde_json::Value>,
+        language: &str,
     ) -> (RuleViolations, HashMap<String, Vec<String>>) {
         println!("Performing rule checks...");
         
@@ -682,17 +666,26 @@ impl LogParser {
                                 f2p_test
                             };
                             
-                            if contains_exact_test_name(&diff_content, test_name_to_search) {
+                            let test_found_in_source = test_detection::contains_exact_test_name(&diff_content, test_name_to_search, language);
+                            
+                            if test_found_in_source {
                                 // Check if this test also appears in test diffs
-                                if !test_diff_contents.is_empty() && contains_exact_test_name(&test_diff_contents, test_name_to_search) {
+                                let test_found_in_test_diffs = if !test_diff_contents.is_empty() {
+                                    test_detection::contains_exact_test_name(&test_diff_contents, test_name_to_search, language)
+                                } else {
+                                    false
+                                };
+                                
+                                if test_found_in_test_diffs {
                                     println!("F2P test '{}' found in both golden source and test diffs - not a violation", f2p_test);
                                 } else {
+                                    let search_term = if language == "python" { f2p_test } else { test_name_to_search };
                                     let violation = format!("{} (found as '{}' in {} but not in test diffs)", 
-                                                          f2p_test, test_name_to_search, 
+                                                          f2p_test, search_term, 
                                                           golden_diff.split('/').last().unwrap_or(golden_diff));
                                     c7_hits.push(violation);
                                     println!("C7 violation: F2P test '{}' found as '{}' in golden source diff '{}' but not in test diffs", 
-                                             f2p_test, test_name_to_search, golden_diff);
+                                             f2p_test, search_term, golden_diff);
                                 }
                             }
                         }
