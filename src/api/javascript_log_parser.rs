@@ -830,26 +830,25 @@ impl JavaScriptLogParser {
     }
 
     pub fn detect_test_framework(&self, log_content: &str) -> String {
-        // If we have a project path, use it for detection
+        // If we have a project path (rare case), use config-based detection
         if let Some(ref project_path) = self.project_path {
             let detected = detect_js_testing_framework(project_path);
-            if detected != "vitest" { // Only use project detection if it's not the default
-                return detected;
-            }
+            return detected;
         }
 
-        // Fallback to log content analysis
+        // Primary method: Analyze log content patterns to detect framework
+        // Order matters - more specific patterns first
         if log_content.contains("Running:") && log_content.contains(".cy.") {
             "cypress".to_string()
         } else if log_content.contains("[chromium]") || log_content.contains("[firefox]") || log_content.contains("[webkit]") {
             "playwright".to_string()
-        } else if log_content.contains("./node_modules/.bin/jest") || log_content.contains("Test Suites:") {
+        } else if log_content.contains("./node_modules/.bin/jest") || log_content.contains("Test Suites:") || log_content.contains("PASS ") || log_content.contains("FAIL ") {
             "jest".to_string()
         } else if log_content.contains("Jasmine") || (log_content.contains("spec") && log_content.contains("Finished in")) {
             "jasmine".to_string()
-        } else if log_content.contains("QUnit") || log_content.contains("# ") {
+        } else if log_content.contains("QUnit") || (log_content.contains("# ") && log_content.contains("✓") && log_content.contains("✗")) {
             "qunit".to_string()
-        } else if log_content.contains("✔") && log_content.contains("✖") && log_content.contains("test") {
+        } else if log_content.contains("✔") && log_content.contains("✖") && log_content.contains(".test.") {
             "ava".to_string()
         } else if log_content.contains("mocha") || (log_content.contains("passing") && log_content.contains("failing")) {
             "mocha".to_string()
