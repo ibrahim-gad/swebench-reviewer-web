@@ -241,15 +241,54 @@ impl JavaScriptLogParser {
     }
 
     fn parse_log_vitest(&self, log: &str) -> HashMap<String, TestStatus> {
+        lazy_static! {
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+            static ref VITEST_TEST_RE: Regex = Regex::new(r"^\s*([✓×↓])\s+(.+?)(?:\s+(?:\d+\s*m?s|\[skipped\]))?$").unwrap();
+            static ref TIMING_RE: Regex = Regex::new(r"\s+(?:\d+\s*m?s|\[skipped\])$").unwrap();
+        }
+
         let mut test_status_map = HashMap::new();
 
         for line in log.lines() {
-            let trimmed = line.trim();
+            // Strip ANSI escape codes first
+            let cleaned_line = ANSI_RE.replace_all(line, "");
+            let trimmed = cleaned_line.trim();
+            
             if trimmed.is_empty() {
                 continue;
             }
             
-            // Check for status symbols at the start
+            // Look for test result lines with status symbols using regex
+            if let Some(captures) = VITEST_TEST_RE.captures(&trimmed) {
+                let symbol = captures.get(1).unwrap().as_str();
+                let test_content = captures.get(2).unwrap().as_str();
+                
+                // Clean up any remaining timing info
+                let mut test_name = TIMING_RE.replace_all(test_content, "").trim().to_string();
+                
+                // For Vitest format like "packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should inject env values"
+                // Extract just the meaningful part after the file path
+                if test_name.contains(" > ") {
+                    let parts: Vec<&str> = test_name.split(" > ").collect();
+                    if parts.len() >= 2 {
+                        // Skip the file path (first part), keep the rest
+                        // e.g., "esbuild-plugin-env > should inject env values"
+                        test_name = parts[1..].join(" > ");
+                    }
+                }
+                
+                let status = match symbol {
+                    "✓" => TestStatus::Passed,
+                    "×" => TestStatus::Failed,
+                    "↓" => TestStatus::Skipped,
+                    _ => continue,
+                };
+
+                test_status_map.insert(test_name, status);
+                continue;
+            }
+            
+            // Fallback: check for status symbols at the start (for simpler formats)
             let (symbol, rest) = if trimmed.starts_with('✓') {
                 ("✓", &trimmed[3..]) // ✓ is 3 bytes in UTF-8
             } else if trimmed.starts_with('×') {
@@ -263,11 +302,15 @@ impl JavaScriptLogParser {
             let rest = rest.trim_start();
             
             // Remove timing info like "100ms" or "[skipped]" from the end
-            let test_name = if let Some(timing_match) = regex::Regex::new(r"\s+(?:\d+\s*m?s|\[skipped\])$").unwrap().find(rest) {
-                &rest[..timing_match.start()]
-            } else {
-                rest
-            }.trim();
+            let mut test_name = TIMING_RE.replace_all(rest, "").trim().to_string();
+            
+            // Apply the same hierarchical name processing
+            if test_name.contains(" > ") {
+                let parts: Vec<&str> = test_name.split(" > ").collect();
+                if parts.len() >= 2 {
+                    test_name = parts[1..].join(" > ");
+                }
+            }
             
             let status = match symbol {
                 "✓" => TestStatus::Passed,
@@ -276,7 +319,7 @@ impl JavaScriptLogParser {
                 _ => continue,
             };
 
-            test_status_map.insert(test_name.to_string(), status);
+            test_status_map.insert(test_name, status);
         }
 
         test_status_map
@@ -1097,5 +1140,31 @@ Finished in 0.123 seconds
 
         let ava_log = "✔ test passes\n✖ test fails\ntest";
         assert_eq!(parser.detect_test_framework(ava_log), "ava");
+    }
+
+    #[test]
+    fn test_vitest_parsing_debug() {
+        let log_content = r#"  ✓ packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should inject env values
+  ✓ packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should handle missing values
+  ✓ packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should handle invalid identifiers
+  ✓ packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should skip injection for node plaform"#;
+
+        let parser = JavaScriptLogParser::new();
+        let results = parser.parse_log_vitest(log_content);
+        
+        println!("Extracted {} tests:", results.len());
+        for (test_name, status) in &results {
+            println!("  '{}' -> {:?}", test_name, status);
+        }
+        
+        // Check specific expected tests
+        assert!(results.len() > 0, "Should have extracted some tests");
+        assert!(results.contains_key("esbuild-plugin-env > should inject env values"), "Should extract test without file path");
+        assert!(results.contains_key("esbuild-plugin-env > should handle missing values"), "Should extract second test");
+        
+        // Verify all tests are marked as passed
+        for (_, status) in &results {
+            assert_eq!(*status, TestStatus::Passed, "All tests should be marked as passed");
+        }
     }
 }
