@@ -90,7 +90,7 @@ lazy_static! {
         .expect("Failed to compile SEABORN_PASSED_PREFIX_RE regex");
     
     // Sympy patterns
-    static ref SYMPY_ERROR_RE: Regex = Regex::new(r"(_*)\s(.*)\.py:(.*)\s(_*)")
+    static ref SYMPY_ERROR_RE: Regex = Regex::new(r"(_+)\s*([^/\s]*(?:/[^/\s]*)*)\.py:([^/\s]+)\s*(_+)")
         .expect("Failed to compile SYMPY_ERROR_RE regex");
     
     static ref SYMPY_TEST_STATUS_RE: Regex = Regex::new(r"^(test_\w+)\s+(E|F|ok)$")
