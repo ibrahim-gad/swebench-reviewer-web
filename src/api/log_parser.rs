@@ -6,6 +6,7 @@ use regex::Regex;
 
 use crate::api::rust_log_parser::RustLogParser;
 use crate::api::python_log_parser::PythonLogParser;
+use crate::api::javascript_log_parser::JavaScriptLogParser;
 use crate::api::test_detection;
 use crate::app::types::{StageStatusSummary, GroupedTestStatuses, LogAnalysisResult, RuleViolations, RuleViolation, DebugInfo, LogCount};
 
@@ -56,6 +57,12 @@ impl LogParser {
         
         // Register Python parser
         parsers.insert("python".to_string(), Box::new(PythonLogParser::new()));
+        
+        // Register JavaScript/TypeScript parsers
+        parsers.insert("javascript".to_string(), Box::new(JavaScriptLogParser::new()));
+        parsers.insert("typescript".to_string(), Box::new(JavaScriptLogParser::new()));
+        parsers.insert("js".to_string(), Box::new(JavaScriptLogParser::new()));
+        parsers.insert("ts".to_string(), Box::new(JavaScriptLogParser::new()));
         
         Self { parsers }
     }
