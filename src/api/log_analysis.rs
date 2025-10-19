@@ -144,7 +144,15 @@ fn search_in_log_file(file_path: &str, test_name: &str) -> Result<Vec<SearchResu
 fn get_search_terms(test_name: &str) -> Vec<String> {
     let mut search_terms = vec![test_name.to_string()];
     
+    // Split on " - " (hyphen with spaces)
     if let Some(last_part) = test_name.split(" - ").last() {
+        if last_part != test_name {
+            search_terms.push(last_part.to_string());
+        }
+    }
+    
+    // Split on " > " (greater than with spaces) for hierarchical test names
+    if let Some(last_part) = test_name.split(" > ").last() {
         if last_part != test_name {
             search_terms.push(last_part.to_string());
         }

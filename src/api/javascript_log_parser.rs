@@ -103,7 +103,7 @@ impl JavaScriptLogParser {
 
     fn parse_log_mocha_v2(&self, log: &str) -> HashMap<String, TestStatus> {
         lazy_static! {
-            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
             static ref PASS_RE: Regex = Regex::new(r"^\s*[✓√✔]\s+(.*?)(?:\s+\(\d+ms\))?\s*$").unwrap();
             static ref FAIL_RE: Regex = Regex::new(r"^\s{4,}\d+\)\s+(.*)").unwrap();
             static ref CROSS_RE: Regex = Regex::new(r"^\s*[×✕]\s+(.*)").unwrap();
@@ -240,21 +240,80 @@ impl JavaScriptLogParser {
         test_status_map
     }
 
-    fn parse_log_vitest(&self, log: &str) -> HashMap<String, TestStatus> {
+    fn extract_test_name_from_path(content: &str) -> String {
+        // For Vitest format like "packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should inject env values"
+        // Extract just the meaningful part after the file path
+        if content.contains(" > ") {
+            let parts: Vec<&str> = content.split(" > ").collect();
+            if parts.len() >= 3 {
+                // Skip the file path (first part), keep the suite and test name
+                // e.g., "esbuild-plugin-env > should inject env values"
+                return parts[1..].join(" > ");
+            } else if parts.len() == 2 {
+                // Just suite > test
+                return parts[1].to_string();
+            }
+        }
+        
+        // If no hierarchical structure, return as-is
+        content.to_string()
+    }
+    
+    // Helper to strip pseudo-ANSI codes like [31m, [39m that appear as plain text
+    fn strip_bracket_codes(text: &str) -> String {
         lazy_static! {
-            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-            static ref VITEST_TEST_RE: Regex = Regex::new(r"^\s*([✓×↓])\s+(.+?)(?:\s+(?:\d+\s*m?s|\[skipped\]))?$").unwrap();
-            static ref TIMING_RE: Regex = Regex::new(r"\s+(?:\d+\s*m?s|\[skipped\])$").unwrap();
+            static ref BRACKET_CODE_RE: Regex = Regex::new(r"\[(\d+;?)+m").unwrap();
+        }
+        BRACKET_CODE_RE.replace_all(text, "").to_string()
+    }
+
+    pub fn parse_log_vitest(&self, log: &str) -> HashMap<String, TestStatus> {
+        lazy_static! {
+            // ANSI regex: ONLY match actual ANSI escape sequences, not plain brackets
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+            static ref VITEST_TEST_RE: Regex = Regex::new(r"^\s*([✓×↓])\s+(.+?)(?:\s+(?:\d+\s*m?s|\[skipped\]?))?$").unwrap();
+            static ref TIMING_RE: Regex = Regex::new(r"\s+(?:\d+\s*m?s|\[skipped\]?)$").unwrap();
+            // Improved pattern for failed test sections that handles both × and FAIL prefixes
+            static ref FAIL_HEADER_RE: Regex = Regex::new(r"^\s*[×✕❌]\s+(.+)$").unwrap();
+            static ref FAIL_SECTION_RE: Regex = Regex::new(r"^\s*FAIL\s+(.+)$").unwrap();
         }
 
         let mut test_status_map = HashMap::new();
 
-        for line in log.lines() {
+        for (line_num, line) in log.lines().enumerate() {
             // Strip ANSI escape codes first
             let cleaned_line = ANSI_RE.replace_all(line, "");
-            let trimmed = cleaned_line.trim();
+            
+            // Strip bracket-style codes like [31m, [39m, [2m, [22m
+            let cleaned_line = Self::strip_bracket_codes(&cleaned_line);
+            
+            // Normalize whitespace (collapse multiple spaces to single spaces)
+            let normalized_line = cleaned_line.split_whitespace().collect::<Vec<_>>().join(" ");
+            let trimmed = normalized_line.trim();
             
             if trimmed.is_empty() {
+                continue;
+            }
+            
+            // Check for failed test sections (like "FAIL packages/..." or "× packages/...")
+            if let Some(captures) = FAIL_SECTION_RE.captures(&trimmed) {
+                let content = captures.get(1).unwrap().as_str();
+                
+                // Extract meaningful test name from hierarchical structure
+                let final_test_name = Self::extract_test_name_from_path(content);
+                
+                test_status_map.insert(final_test_name, TestStatus::Failed);
+                continue;
+            }
+            
+            // Check for × symbol test failures
+            if let Some(captures) = FAIL_HEADER_RE.captures(&trimmed) {
+                let content = captures.get(1).unwrap().as_str();
+                
+                // Extract meaningful test name from hierarchical structure  
+                let final_test_name = Self::extract_test_name_from_path(content);
+                
+                test_status_map.insert(final_test_name, TestStatus::Failed);
                 continue;
             }
             
@@ -264,22 +323,14 @@ impl JavaScriptLogParser {
                 let test_content = captures.get(2).unwrap().as_str();
                 
                 // Clean up any remaining timing info
-                let mut test_name = TIMING_RE.replace_all(test_content, "").trim().to_string();
+                let test_content = TIMING_RE.replace_all(test_content, "").trim().to_string();
                 
-                // For Vitest format like "packages/esbuild-plugin-env/test/test.spec.js > esbuild-plugin-env > should inject env values"
-                // Extract just the meaningful part after the file path
-                if test_name.contains(" > ") {
-                    let parts: Vec<&str> = test_name.split(" > ").collect();
-                    if parts.len() >= 2 {
-                        // Skip the file path (first part), keep the rest
-                        // e.g., "esbuild-plugin-env > should inject env values"
-                        test_name = parts[1..].join(" > ");
-                    }
-                }
+                // Extract meaningful test name using helper function
+                let test_name = Self::extract_test_name_from_path(&test_content);
                 
                 let status = match symbol {
                     "✓" => TestStatus::Passed,
-                    "×" => TestStatus::Failed,
+                    "×" | "✕" => TestStatus::Failed,
                     "↓" => TestStatus::Skipped,
                     _ => continue,
                 };
@@ -295,26 +346,32 @@ impl JavaScriptLogParser {
                 ("×", &trimmed[3..]) // × is 3 bytes in UTF-8
             } else if trimmed.starts_with('↓') {
                 ("↓", &trimmed[3..]) // ↓ is 3 bytes in UTF-8
+            } else if trimmed.starts_with('✕') {
+                ("✕", &trimmed[3..]) // ✕ is also 3 bytes in UTF-8
             } else {
+                // Check for fail header pattern
+                if let Some(captures) = FAIL_HEADER_RE.captures(&trimmed) {
+                    let test_content = captures.get(1).unwrap().as_str();
+                    
+                    // Extract meaningful test name
+                    let test_name = Self::extract_test_name_from_path(test_content);
+                    
+                    test_status_map.insert(test_name, TestStatus::Failed);
+                }
                 continue;
             };
             
             let rest = rest.trim_start();
             
             // Remove timing info like "100ms" or "[skipped]" from the end
-            let mut test_name = TIMING_RE.replace_all(rest, "").trim().to_string();
+            let test_content = TIMING_RE.replace_all(rest, "").trim().to_string();
             
-            // Apply the same hierarchical name processing
-            if test_name.contains(" > ") {
-                let parts: Vec<&str> = test_name.split(" > ").collect();
-                if parts.len() >= 2 {
-                    test_name = parts[1..].join(" > ");
-                }
-            }
+            // Apply the same hierarchical name processing using helper function
+            let test_name = Self::extract_test_name_from_path(&test_content);
             
             let status = match symbol {
                 "✓" => TestStatus::Passed,
-                "×" => TestStatus::Failed,
+                "×" | "✕" => TestStatus::Failed,
                 "↓" => TestStatus::Skipped,
                 _ => continue,
             };
@@ -488,7 +545,7 @@ impl JavaScriptLogParser {
 
     fn parse_log_p5js(&self, log: &str) -> HashMap<String, TestStatus> {
         lazy_static! {
-            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
             static ref JSON_BLOCK_RE: Regex = Regex::new(r"\{[^}]*\}").unwrap();
             static ref JSON_LIST_RE: Regex = Regex::new(r"\[[^\]]*\]").unwrap();
             static ref XML_BLOCK_RE: Regex = Regex::new(r"<(\w+)>[\s\S]*?</\1>").unwrap();
@@ -836,27 +893,38 @@ impl JavaScriptLogParser {
             return detected;
         }
 
+        // Strip ANSI codes and bracket-style codes before detection
+        lazy_static! {
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        }
+        let cleaned_log = ANSI_RE.replace_all(log_content, "");
+        let cleaned_log = Self::strip_bracket_codes(&cleaned_log);
+
         // Primary method: Analyze log content patterns to detect framework
         // Order matters - more specific patterns first
-        if log_content.contains("Running:") && log_content.contains(".cy.") {
-            "cypress".to_string()
-        } else if log_content.contains("[chromium]") || log_content.contains("[firefox]") || log_content.contains("[webkit]") {
-            "playwright".to_string()
-        } else if log_content.contains("./node_modules/.bin/jest") || log_content.contains("Test Suites:") || log_content.contains("PASS ") || log_content.contains("FAIL ") {
-            "jest".to_string()
-        } else if log_content.contains("Jasmine") || (log_content.contains("spec") && log_content.contains("Finished in")) {
-            "jasmine".to_string()
-        } else if log_content.contains("QUnit") || (log_content.contains("# ") && log_content.contains("✓") && log_content.contains("✗")) {
-            "qunit".to_string()
-        } else if log_content.contains("✔") && log_content.contains("✖") && log_content.contains(".test.") {
-            "ava".to_string()
-        } else if log_content.contains("mocha") || (log_content.contains("passing") && log_content.contains("failing")) {
-            "mocha".to_string()
-        } else if log_content.contains("✓") && log_content.contains("×") && log_content.contains("↓") {
+        
+        // Check for Vitest FIRST (before Jest) - look for vitest command or RUN header
+        if cleaned_log.contains("vitest run") || cleaned_log.contains("RUN  v") || 
+           ((cleaned_log.contains("✓") || cleaned_log.contains("×") || cleaned_log.contains("↓")) && 
+            (cleaned_log.contains(" > ") || cleaned_log.contains("packages/"))) {
             "vitest".to_string()
-        } else if log_content.contains("Starting browser") || log_content.contains("SUMMARY:") {
+        } else if cleaned_log.contains("Running:") && cleaned_log.contains(".cy.") {
+            "cypress".to_string()
+        } else if cleaned_log.contains("[chromium]") || cleaned_log.contains("[firefox]") || cleaned_log.contains("[webkit]") {
+            "playwright".to_string()
+        } else if cleaned_log.contains("./node_modules/.bin/jest") || cleaned_log.contains("Test Suites:") {
+            "jest".to_string()
+        } else if cleaned_log.contains("Jasmine") || (cleaned_log.contains("spec") && cleaned_log.contains("Finished in")) {
+            "jasmine".to_string()
+        } else if cleaned_log.contains("QUnit") || (cleaned_log.contains("# ") && cleaned_log.contains("✓") && cleaned_log.contains("✗")) {
+            "qunit".to_string()
+        } else if cleaned_log.contains("✔") && cleaned_log.contains("✖") {
+            "ava".to_string()
+        } else if cleaned_log.contains("mocha") || (cleaned_log.contains("passing") && cleaned_log.contains("failing")) {
+            "mocha".to_string()
+        } else if cleaned_log.contains("Starting browser") || cleaned_log.contains("SUMMARY:") {
             "karma".to_string()
-        } else if log_content.contains("ok ") && log_content.contains("not ok ") {
+        } else if cleaned_log.contains("ok ") && cleaned_log.contains("not ok ") {
             "tap".to_string()
         } else {
             "vitest".to_string() // Default fallback
@@ -924,6 +992,9 @@ impl LogParserTrait for JavaScriptLogParser {
         } else {
             self.parser_name.clone()
         };
+
+        eprintln!("DEBUG: Detected framework '{}' for file: {}", framework, file_path);
+        eprintln!("DEBUG: Content preview (first 500 chars): {}", &content[..content.len().min(500)]);
 
         let test_status_map = match framework.as_str() {
             "calypso" => self.parse_log_calypso(&content),
@@ -1166,4 +1237,169 @@ Finished in 0.123 seconds
             assert_eq!(*status, TestStatus::Passed, "All tests should be marked as passed");
         }
     }
+
+    #[test]
+    fn test_ansi_stripping_exact_pattern() {
+        // Test the exact ANSI pattern from the log with extra spaces
+        let test_line = "\x1b[31m× \x1b[39m packages/esbuild-plugin-html/test/test.spec.js \x1b[2m >  \x1b[22mesbuild-plugin-html \x1b[2m >  \x1b[22mshould interop with other html preprocessors";
+        
+        println!("Original line: '{}'", test_line);
+        
+        // Test current regex pattern
+        let ansi_re = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        let cleaned = ansi_re.replace_all(test_line, "");
+        
+        println!("After ANSI stripping: '{}'", cleaned);
+        
+        // Normalize whitespace (collapse multiple spaces to single spaces)
+        let normalized = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+        let trimmed = normalized.trim();
+        
+        println!("After whitespace normalization: '{}'", trimmed);
+        
+        // Test if this would match the Vitest regex
+        let vitest_re = Regex::new(r"^\s*([✓×↓])\s+(.+?)(?:\s+(?:\d+\s*m?s|\[skipped\]))?$").unwrap();
+        
+        if let Some(captures) = vitest_re.captures(&trimmed) {
+            let symbol = captures.get(1).unwrap().as_str();
+            let test_content = captures.get(2).unwrap().as_str();
+            println!("Match found! Symbol: '{}', Content: '{}'", symbol, test_content);
+            assert_eq!(symbol, "×");
+            assert!(test_content.contains("packages/esbuild-plugin-html/test/test.spec.js"));
+        } else {
+            println!("No match found with Vitest regex");
+            
+            // Let's try to see what characters are in the cleaned line
+            println!("Normalized line character analysis:");
+            for (i, ch) in trimmed.chars().enumerate() {
+                println!("  {}: '{}' (U+{:04X})", i, ch, ch as u32);
+                if i > 15 { break; } // Show first few characters
+            }
+            
+            panic!("Expected to match Vitest regex but didn't");
+        }
+    }
+
+    #[test]
+    fn test_vitest_fail_format_analysis() {
+        let log_content = r#"[31m× [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors
+ [31m   → Build failed with 1 error:
+error: No loader is configured for ".hbs" files: fixture/index.icons.hbs [39m
+
+ [31m⎯⎯⎯⎯⎯⎯⎯ [1m [7m Failed Tests 1  [27m [22m⎯⎯⎯⎯⎯⎯⎯ [39m
+
+ [31m [1m [7m FAIL  [27m [22m [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors"#;
+
+        let parser = JavaScriptLogParser::new_with_parser("vitest");
+        let result = parser.parse_log_vitest(log_content);
+        
+        println!("Test results: {:?}", result);
+        
+        // We should extract at least one failed test
+        assert!(!result.is_empty(), "Should extract at least one test");
+        
+        // Look for the specific test that should be extracted
+        let expected_test_name = "esbuild-plugin-html > should interop with other html preprocessors";
+        assert!(result.contains_key(expected_test_name), 
+               "Should extract test: '{}'. Found tests: {:?}", expected_test_name, result.keys().collect::<Vec<_>>());
+        assert_eq!(result.get(expected_test_name), Some(&TestStatus::Failed));
+        
+        // Should extract the test from both the × line and the FAIL line
+        // But since they're the same test, we should only have one entry
+        assert_eq!(result.len(), 1, "Should have exactly one test (not duplicated)");
+    }
+
+    #[test]
+    fn test_vitest_debug_real_log() {
+        let log_content = r#"[31m× [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors
+ [31m   → Build failed with 1 error:
+error: No loader is configured for ".hbs" files: fixture/index.icons.hbs [39m
+
+ [31m⎯⎯⎯⎯⎯⎯⎯ [1m [7m Failed Tests 1  [27m [22m⎯⎯⎯⎯⎯⎯⎯ [39m
+
+ [31m [1m [7m FAIL  [27m [22m [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors"#;
+
+        println!("Testing with actual log content from user...");
+        
+        let parser = JavaScriptLogParser::new_with_parser("vitest");
+        let result = parser.parse_log_vitest(log_content);
+        
+        println!("\nExtracted {} tests:", result.len());
+        for (test_name, status) in &result {
+            println!("  '{}' -> {:?}", test_name, status);
+        }
+        
+        // The test should be detected and marked as failed
+        assert!(!result.is_empty(), "Should extract at least one test from the log");
+        
+        let expected_test_name = "esbuild-plugin-html > should interop with other html preprocessors";
+        assert!(result.contains_key(expected_test_name), 
+               "Should extract test: '{}'. Found tests: {:?}", 
+               expected_test_name, result.keys().collect::<Vec<_>>());
+        assert_eq!(result.get(expected_test_name), Some(&TestStatus::Failed));
+    }
+
+    #[test]
+    fn test_vitest_extended_log_with_stack_traces() {
+        let log_content = r#"[31m× [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors
+ [31m   → Build failed with 1 error:
+error: No loader is configured for ".hbs" files: fixture/index.icons.hbs [39m
+
+ [31m⎯⎯⎯⎯⎯⎯⎯ [1m [7m Failed Tests 1  [27m [22m⎯⎯⎯⎯⎯⎯⎯ [39m
+
+ [31m [1m [7m FAIL  [27m [22m [39m packages/esbuild-plugin-html/test/test.spec.js [2m >  [22mesbuild-plugin-html [2m >  [22mshould interop with other html preprocessors
+ [31m [1mError [22m: Build failed with 1 error:
+error: No loader is configured for ".hbs" files: fixture/index.icons.hbs [39m
+ [90m  [2m❯ [22m failureErrorWithLog node_modules/esbuild/lib/main.js: [2m1472:15 [22m [39m
+ [90m  [2m❯ [22m node_modules/esbuild/lib/main.js: [2m945:25 [22m [39m
+ [90m  [2m❯ [22m node_modules/esbuild/lib/main.js: [2m1353:9 [22m [39m
+
+ [31m [2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ [22m [39m
+ [31m [1mSerialized Error: [22m [39m  [90m{ errors: [ { detail: undefined, id: '', location: null, notes: [], pluginName: '', text: 'No loader is configured for ".hbs" files: fixture/index.icons.hbs' } ], warnings: [] } [39m
+ [31m [2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯ [22m [39m
+
+ [2m Test Files  [22m  [1m [31m1 failed [39m [22m [90m (1) [39m
+ [2m      Tests  [22m  [1m [31m1 failed [39m [22m [2m |  [22m [1m [32m23 passed [39m [22m [90m (24) [39m
+ [2m   Start at  [22m 11:42:24
+ [2m   Duration  [22m 4.65s [2m (transform 225ms, setup 0ms, collect 359ms, tests 3.94s, environment 0ms, prepare 86ms) [22m [22m
+
++ : '>>>>> End Test Output'"#;
+
+        println!("Testing extended Vitest log with stack traces and error details...");
+        println!("Log preview: {}", &log_content[..200.min(log_content.len())]);
+        
+        let parser = JavaScriptLogParser::new_with_parser("vitest");
+        let result = parser.parse_log_vitest(log_content);
+        
+        println!("\n=== EXTENDED LOG TEST RESULTS ===");
+        println!("Total tests extracted: {}", result.len());
+        
+        if result.is_empty() {
+            println!("❌ ERROR: No tests were detected!");
+            panic!("Should extract at least one test from extended log");
+        } else {
+            println!("✅ SUCCESS: Found {} test(s)", result.len());
+            
+            for (test_name, status) in &result {
+                println!("  📋 Test: '{}'", test_name);
+                println!("    Status: {:?}", status);
+            }
+        }
+        
+        // Check that the specific failing test is detected
+        let expected_test_name = "esbuild-plugin-html > should interop with other html preprocessors";
+        
+        assert!(result.contains_key(expected_test_name), 
+               "Should extract test: '{}'. Found tests: {:?}", 
+               expected_test_name, result.keys().collect::<Vec<_>>());
+        
+        assert_eq!(result.get(expected_test_name), Some(&TestStatus::Failed),
+                  "Test should be marked as Failed");
+        
+        println!("🎉 SUCCESS: Extended log format correctly parsed!");
+        println!("   ✅ Test detected: '{}'", expected_test_name);
+        println!("   ✅ Status correctly marked as Failed");
+    }
+
+    // ...existing tests...
 }
