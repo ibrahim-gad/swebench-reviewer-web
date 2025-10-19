@@ -242,7 +242,7 @@ impl JavaScriptLogParser {
 
     fn parse_log_vitest(&self, log: &str) -> HashMap<String, TestStatus> {
         lazy_static! {
-            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
             static ref VITEST_TEST_RE: Regex = Regex::new(r"^\s*([✓×↓])\s+(.+?)(?:\s+(?:\d+\s*m?s|\[skipped\]))?$").unwrap();
             static ref TIMING_RE: Regex = Regex::new(r"\s+(?:\d+\s*m?s|\[skipped\])$").unwrap();
         }
@@ -252,6 +252,7 @@ impl JavaScriptLogParser {
         for line in log.lines() {
             // Strip ANSI escape codes first
             let cleaned_line = ANSI_RE.replace_all(line, "");
+            let cleaned_line = Self::strip_bracket_codes(&cleaned_line);
             let trimmed = cleaned_line.trim();
             
             if trimmed.is_empty() {
@@ -829,6 +830,14 @@ impl JavaScriptLogParser {
         }
     }
 
+    // Helper to strip pseudo-ANSI codes like [31m, [39m that appear as plain text
+    fn strip_bracket_codes(text: &str) -> String {
+        lazy_static! {
+            static ref BRACKET_CODE_RE: Regex = Regex::new(r"\[(\d+;?)+m").unwrap();
+        }
+        BRACKET_CODE_RE.replace_all(text, "").to_string()
+    }
+
     pub fn detect_test_framework(&self, log_content: &str) -> String {
         // If we have a project path (rare case), use config-based detection
         if let Some(ref project_path) = self.project_path {
@@ -836,27 +845,40 @@ impl JavaScriptLogParser {
             return detected;
         }
 
+        // Strip ANSI codes and bracket-style codes before detection
+        lazy_static! {
+            static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        }
+        let cleaned_log = ANSI_RE.replace_all(log_content, "");
+        let cleaned_log = Self::strip_bracket_codes(&cleaned_log);
+
         // Primary method: Analyze log content patterns to detect framework
         // Order matters - more specific patterns first
-        if log_content.contains("Running:") && log_content.contains(".cy.") {
+        
+        // Vitest detection FIRST - check for command and header
+        if cleaned_log.contains("vitest run") || cleaned_log.contains("RUN  v") {
+            return "vitest".to_string();
+        }
+        
+        if cleaned_log.contains("Running:") && cleaned_log.contains(".cy.") {
             "cypress".to_string()
-        } else if log_content.contains("[chromium]") || log_content.contains("[firefox]") || log_content.contains("[webkit]") {
+        } else if cleaned_log.contains("[chromium]") || cleaned_log.contains("[firefox]") || cleaned_log.contains("[webkit]") {
             "playwright".to_string()
-        } else if log_content.contains("./node_modules/.bin/jest") || log_content.contains("Test Suites:") || log_content.contains("PASS ") || log_content.contains("FAIL ") {
+        } else if cleaned_log.contains("./node_modules/.bin/jest") || cleaned_log.contains("Test Suites:") {
             "jest".to_string()
-        } else if log_content.contains("Jasmine") || (log_content.contains("spec") && log_content.contains("Finished in")) {
+        } else if cleaned_log.contains("Jasmine") || (cleaned_log.contains("spec") && cleaned_log.contains("Finished in")) {
             "jasmine".to_string()
-        } else if log_content.contains("QUnit") || (log_content.contains("# ") && log_content.contains("✓") && log_content.contains("✗")) {
+        } else if cleaned_log.contains("QUnit") || (cleaned_log.contains("# ") && cleaned_log.contains("✓") && cleaned_log.contains("✗")) {
             "qunit".to_string()
-        } else if log_content.contains("✔") && log_content.contains("✖") && log_content.contains(".test.") {
+        } else if cleaned_log.contains("✔") && cleaned_log.contains("✖") {
             "ava".to_string()
-        } else if log_content.contains("mocha") || (log_content.contains("passing") && log_content.contains("failing")) {
+        } else if cleaned_log.contains("mocha") || (cleaned_log.contains("passing") && cleaned_log.contains("failing")) {
             "mocha".to_string()
-        } else if log_content.contains("✓") && log_content.contains("×") && log_content.contains("↓") {
+        } else if (cleaned_log.contains("✓") || cleaned_log.contains("×") || cleaned_log.contains("↓")) && (cleaned_log.contains(" > ") || cleaned_log.contains("packages/")) {
             "vitest".to_string()
-        } else if log_content.contains("Starting browser") || log_content.contains("SUMMARY:") {
+        } else if cleaned_log.contains("Starting browser") || cleaned_log.contains("SUMMARY:") {
             "karma".to_string()
-        } else if log_content.contains("ok ") && log_content.contains("not ok ") {
+        } else if cleaned_log.contains("ok ") && cleaned_log.contains("not ok ") {
             "tap".to_string()
         } else {
             "vitest".to_string() // Default fallback
@@ -924,6 +946,9 @@ impl LogParserTrait for JavaScriptLogParser {
         } else {
             self.parser_name.clone()
         };
+
+        eprintln!("DEBUG: Detected framework '{}' for file: {}", framework, file_path);
+        eprintln!("DEBUG: Content preview (first 500 chars): {}", &content[..content.len().min(500)]);
 
         let test_status_map = match framework.as_str() {
             "calypso" => self.parse_log_calypso(&content),
