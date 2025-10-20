@@ -23,12 +23,14 @@ pub fn FileViewer(
     // Effect to trigger loading when tab changes to an unloaded one
     Effect::new(move |_| {
         let current_tab = active_tab.get();
-        let contents = file_contents.get();
-        let loaded = loaded_file_types.get();
         
-        if contents.get(&current_tab).is_none() && !loaded.is_loaded(&current_tab) {
-            if let Some(_) = result.get() {
-                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone(), None);
+        // Use with_untracked to avoid creating reactive dependencies
+        let is_loaded = loaded_file_types.with_untracked(|loaded| loaded.is_loaded(&current_tab));
+        
+        // Only trigger loading if the file is not loaded yet
+        if !is_loaded {
+            if result.with_untracked(|r| r.is_some()) {
+                load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone(), Some(vec![current_tab.clone()]));
             }
         }
     });

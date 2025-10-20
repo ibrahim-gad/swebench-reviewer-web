@@ -5,7 +5,8 @@ use super::types::{FileContents, FileContent, ProcessingResult, LoadedFileTypes}
 #[server]
 pub async fn handle_get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<String, ServerFnError> {
     use crate::api::file_operations::{get_file_contents};
-    Ok(get_file_contents(file_type, file_paths).unwrap())
+    get_file_contents(file_type, file_paths)
+        .map_err(|e| ServerFnError::ServerError(e))
 }
 
 pub fn load_file_contents(
@@ -43,25 +44,44 @@ pub fn load_file_contents(
         
         for file_type in &to_load {
             let content = handle_get_file_contents(file_type.clone(), result_data.file_paths.clone()).await;
-            if let Ok(content) = content {
-                let is_json_type = matches!(file_type.as_str(), "main_json" | "report")
-                    || file_type.contains("json");
-                let file_content = FileContent {
-                    content,
-                    file_type: if is_json_type { "json" } else { "text" }.to_string(),
-                };
-                
-                match file_type.as_str() {
-                    "base" => contents.base = Some(file_content),
-                    "before" => contents.before = Some(file_content),
-                    "after" => contents.after = Some(file_content),
-                    "agent" => contents.agent = Some(file_content),
-                    "main_json" => contents.main_json = Some(file_content),
-                    "report" => contents.report = Some(file_content),
-                    _ => {}
+            match content {
+                Ok(content) => {
+                    // Check if this is a "not found" message for optional files
+                    let is_optional = matches!(file_type.as_str(), "agent" | "report");
+                    let is_not_found = content.starts_with("No ") && content.contains("file found");
+                    
+                    if is_optional && is_not_found {
+                        // For optional files that are not found, don't create FileContent
+                        // Just mark as loaded so we don't keep trying
+                        loaded_types.set_loaded(file_type.as_str());
+                        continue;
+                    }
+                    
+                    let is_json_type = matches!(file_type.as_str(), "main_json" | "report")
+                        || file_type.contains("json");
+                    let file_content = FileContent {
+                        content,
+                        file_type: if is_json_type { "json" } else { "text" }.to_string(),
+                    };
+                    
+                    match file_type.as_str() {
+                        "base" => contents.base = Some(file_content),
+                        "before" => contents.before = Some(file_content),
+                        "after" => contents.after = Some(file_content),
+                        "agent" => contents.agent = Some(file_content),
+                        "main_json" => contents.main_json = Some(file_content),
+                        "report" => contents.report = Some(file_content),
+                        _ => {}
+                    }
+                    
+                    loaded_types.set_loaded(file_type.as_str());
                 }
-                
-                loaded_types.set_loaded(file_type.as_str());
+                Err(e) => {
+                    // Handle error - mark as loaded to prevent infinite retry
+                    eprintln!("Failed to load {}: {:?}", file_type, e);
+                    loaded_types.set_loaded(file_type.as_str());
+                    // For required files, we could optionally store an error message
+                }
             }
         }
         

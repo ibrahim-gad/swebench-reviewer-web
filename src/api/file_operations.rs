@@ -22,11 +22,14 @@ pub fn get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<S
         "base" => vec!["base.log", "base.txt"],
         "before" => vec!["before.log", "before.txt"],
         "after" => vec!["after.log", "after.txt"],
-        "agent" => vec!["post_agent_patch"],
-        "main_json" => vec!["main/", "report.json", "summary.json"],
-        "report" => vec!["report.json", "analysis.json", "results.json"],
+        "agent" => vec!["post_agent_patch.log", "post_agent_patch"],
+        "main_json" => vec!["main.json", "main/"],
+        "report" => vec!["report.json", "analysis.json", "results.json", "results/report.json"],
         _ => return Err(format!("Unknown file type: {}", file_type)),
     };
+
+    // Check if this is an optional file type
+    let is_optional = matches!(file_type.as_str(), "agent" | "report");
 
     // Build absolute path candidates from relative paths: base_temp_dir/folder_id/<rel>
     // We reconstruct base_temp_dir using the TempDir parent pattern used in download_deliverable_impl
@@ -34,13 +37,26 @@ pub fn get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<S
     let temp_path = temp_dir.path().to_string_lossy().to_string();
     let base_temp_dir = std::path::Path::new(&temp_path).parent().unwrap().join("swe-reviewer-temp");
 
+    eprintln!("Looking for {} file type in {} paths", file_type, file_paths.len());
+    
     for rel in &file_paths {
         let abs_path: PathBuf = base_temp_dir.join(rel);
+        
+        // Check if the file exists first
+        if !abs_path.exists() {
+            eprintln!("Path does not exist: {}", abs_path.display());
+            continue;
+        }
+        
         let path_lower = abs_path.to_string_lossy().to_lowercase();
         for extension in &file_extensions {
             if path_lower.contains(extension) {
+                eprintln!("Found matching file: {} (matches: {})", abs_path.display(), extension);
                 match fs::read_to_string(&abs_path) {
-                    Ok(content) => return Ok(content),
+                    Ok(content) => {
+                        eprintln!("Successfully read {} ({} bytes)", abs_path.display(), content.len());
+                        return Ok(content);
+                    }
                     Err(e) => {
                         eprintln!("Failed to read file {}: {}", abs_path.display(), e);
                         continue;
@@ -50,7 +66,14 @@ pub fn get_file_contents(file_type: String, file_paths: Vec<String>) -> Result<S
         }
     }
     
-    Ok(format!("No {} file found in the provided paths", file_type))
+    // For optional files, return a clear indicator that the file is missing
+    if is_optional {
+        eprintln!("Optional {} file not found, returning placeholder", file_type);
+        Ok(format!("No {} file found", file_type))
+    } else {
+        eprintln!("Required {} file not found in {} paths", file_type, file_paths.len());
+        Err(format!("Required {} file not found in the provided paths", file_type))
+    }
 }
 
 pub fn get_test_lists(file_paths: Vec<String>) -> Result<TestLists, String> {

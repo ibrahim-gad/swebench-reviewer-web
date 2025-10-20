@@ -221,8 +221,12 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
     });
 
     Effect::new(move |_| {
-        if let Some(_) = result.get() {
-            if !loading_files.get() && file_contents.get().main_json.is_none() {
+        if result.with_untracked(|r| r.is_some()) {
+            let is_loaded = loaded_file_types.with_untracked(|loaded| loaded.is_loaded("main_json"));
+            let is_loading = loading_files.with_untracked(|l| *l);
+            let has_main_json = file_contents.with_untracked(|fc| fc.main_json.is_some());
+            
+            if !is_loading && !has_main_json && !is_loaded {
                 leptos::logging::log!("Loading main json");
                 load_file_contents(result.clone(), file_contents.clone(), loading_files.clone(), loaded_file_types.clone(), Some(vec!["main_json".to_string()]));
             }
@@ -239,8 +243,10 @@ pub fn DeliverableCheckerPage(current_deliverable: RwSignal<Option<ProcessingRes
 
     Effect::new(move |_| {
         if let Some(mut r) = result.get().clone() {
-            if r.instance_id.is_empty() && file_contents.get().main_json.is_some() {
-                if let Some(main_json) = &file_contents.get().main_json {
+            let has_main_json = file_contents.with_untracked(|fc| fc.main_json.clone());
+            
+            if r.instance_id.is_empty() && has_main_json.is_some() {
+                if let Some(main_json) = &has_main_json {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&main_json.content) {
                         let instance_id = json.get("instance_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
                         let task_id = json.get("task_id").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
