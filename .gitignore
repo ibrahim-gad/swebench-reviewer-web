@@ -33,6 +33,9 @@ debug_*.rs
 debug_*.rs
 *_debug.rs
 test_*.rs
+test_*
+
+*.log
 
 # Examples directory
 examples/

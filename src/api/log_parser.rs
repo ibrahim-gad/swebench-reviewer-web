@@ -299,17 +299,59 @@ impl LogParser {
 
     fn status_lookup(&self, names: &[String], parsed: &ParsedLog) -> HashMap<String, String> {
         let mut out = HashMap::new();
+        
+        println!("=== STATUS LOOKUP DEBUG ===");
+        println!("Expected test names ({} total):", names.len());
+        for (i, name) in names.iter().enumerate() {
+            println!("  {}: '{}'", i + 1, name);
+            if i >= 4 { 
+                println!("  ... and {} more", names.len() - 5);
+                break; 
+            }
+        }
+        
+        println!("Parsed test results:");
+        println!("  Passed ({} total):", parsed.passed.len());
+        for (i, name) in parsed.passed.iter().enumerate() {
+            println!("    {}: '{}'", i + 1, name);
+            if i >= 2 { 
+                println!("    ... and {} more", parsed.passed.len() - 3);
+                break; 
+            }
+        }
+        println!("  Failed ({} total):", parsed.failed.len());
+        for (i, name) in parsed.failed.iter().enumerate() {
+            println!("    {}: '{}'", i + 1, name);
+            if i >= 2 { 
+                println!("    ... and {} more", parsed.failed.len() - 3);
+                break; 
+            }
+        }
+        println!("  Ignored ({} total):", parsed.ignored.len());
+        for (i, name) in parsed.ignored.iter().enumerate() {
+            println!("    {}: '{}'", i + 1, name);
+            if i >= 2 { 
+                println!("    ... and {} more", parsed.ignored.len() - 3);
+                break; 
+            }
+        }
+        
         for name in names {
             if parsed.failed.contains(name) {
+                println!("MATCH: '{}' found in FAILED", name);
                 out.insert(name.clone(), "failed".to_string());
             } else if parsed.passed.contains(name) {
+                println!("MATCH: '{}' found in PASSED", name);
                 out.insert(name.clone(), "passed".to_string());
             } else if parsed.ignored.contains(name) {
+                println!("MATCH: '{}' found in IGNORED", name);
                 out.insert(name.clone(), "ignored".to_string());
             } else {
+                println!("NO MATCH: '{}' not found in any category, marking as MISSING", name);
                 out.insert(name.clone(), "missing".to_string());
             }
         }
+        println!("=============================");
         out
     }
 
