@@ -30,6 +30,9 @@ async fn validate_cached_folder(
         "_after.log",
         "_before.log", 
         "_base.log",
+    ];
+    
+    let optional_suffixes = vec![
         "_post_agent_patch.log",
     ];
 
@@ -48,15 +51,14 @@ async fn validate_cached_folder(
         }
     }
 
+    // results folder is now optional
     let results_path = cached_path.join("results");
-    if !results_path.exists() || !results_path.is_dir() {
-        return Err("Missing required 'results' folder in cache".to_string());
-    }
-
-    let report_path = results_path.join("report.json");
-    if !report_path.exists() || !report_path.is_file() {
-        return Err("Missing required file: report.json in results folder cache".to_string());
-    }
+    let has_report = if results_path.exists() && results_path.is_dir() {
+        let report_path = results_path.join("report.json");
+        report_path.exists() && report_path.is_file()
+    } else {
+        false
+    };
     let patches_path = cached_path.join("patches");
     if !patches_path.exists() || !patches_path.is_dir() {
         return Err("Missing required 'patches' folder in cache".to_string());
@@ -100,6 +102,23 @@ async fn validate_cached_folder(
             });
         }
     }
+
+    // Add optional log files if they exist
+    for suffix in &optional_suffixes {
+        if let Some(log_file) = std::fs::read_dir(&logs_path)
+            .map_err(|e| format!("Failed to read logs directory: {}", e))?
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                file_name.ends_with(&suffix.to_lowercase()) && entry.path().is_file()
+            }) {
+            files_to_download.push(FileInfo {
+                id: "cached".to_string(),
+                name: log_file.file_name().to_string_lossy().to_string(),
+                path: format!("logs/{}", log_file.file_name().to_string_lossy()),
+            });
+        }
+    }
     let patches_files = std::fs::read_dir(&patches_path)
     .map_err(|e| format!("Failed to read patches directory: {}", e))?
     .filter_map(|entry| entry.ok())
@@ -112,11 +131,15 @@ for patch_file in patches_files {
         path: format!("patches/{}", patch_file.file_name().to_string_lossy()),
     });
 }
-    files_to_download.push(FileInfo {
-        id: "cached".to_string(),
-        name: "report.json".to_string(),
-        path: "results/report.json".to_string(),
-    });
+
+    // Add report.json only if it exists
+    if has_report {
+        files_to_download.push(FileInfo {
+            id: "cached".to_string(),
+            name: "report.json".to_string(),
+            path: "results/report.json".to_string(),
+        });
+    }
 
     Ok(ValidationResult {
         files_to_download,
@@ -254,6 +277,9 @@ pub async fn validate_deliverable_impl(
         "_after.log",
         "_before.log",
         "_base.log",
+    ];
+    
+    let optional_suffixes = vec![
         "_post_agent_patch.log",
     ];
 
@@ -270,23 +296,29 @@ pub async fn validate_deliverable_impl(
         }
     }
 
+    // results folder is now optional
     let results_folder = files.iter().find(|file| {
         let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
         file_name == "results" && file["mimeType"].as_str() == Some("application/vnd.google-apps.folder")
-    }).ok_or("Missing required 'results' folder (case insensitive search)".to_string())?;
+    });
 
-    let results_folder_id = results_folder["id"].as_str().ok_or("Invalid results folder ID")?;
+    let report_file = if let Some(results_folder) = results_folder {
+        let results_folder_id = results_folder["id"].as_str().ok_or("Invalid results folder ID")?;
 
-    let results_contents = get_folder_contents(results_folder_id, &access_token).await
-        .map_err(|e| format!("Failed to get results folder contents: {}", e))?;
+        let results_contents = get_folder_contents(results_folder_id, &access_token).await
+            .map_err(|e| format!("Failed to get results folder contents: {}", e))?;
 
-    let results_files = results_contents["files"].as_array()
-        .ok_or("Invalid results folder contents response")?;
+        let results_files = results_contents["files"].as_array()
+            .ok_or("Invalid results folder contents response")?;
 
-    let report_file = results_files.iter().find(|file| {
-        let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
-        file_name == "report.json" && file["mimeType"].as_str() != Some("application/vnd.google-apps.folder")
-    }).ok_or("Missing required file: report.json in results folder".to_string())?;
+        // report.json is now optional - clone the found file to avoid borrowing issues
+        results_files.iter().find(|file| {
+            let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+            file_name == "report.json" && file["mimeType"].as_str() != Some("application/vnd.google-apps.folder")
+        }).cloned()
+    } else {
+        None
+    };
 
     let mut files_to_download = Vec::new();
 
@@ -314,11 +346,28 @@ pub async fn validate_deliverable_impl(
         }
     }
 
-    files_to_download.push(FileInfo {
-        id: report_file["id"].as_str().unwrap_or("").to_string(),
-        name: report_file["name"].as_str().unwrap_or("").to_string(),
-        path: format!("results/{}", report_file["name"].as_str().unwrap_or("")),
-    });
+    // Add optional log files if they exist
+    for suffix in &optional_suffixes {
+        if let Some(log_file) = log_files.iter().find(|file| {
+            let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
+            file_name.ends_with(&suffix.to_lowercase())
+        }) {
+            files_to_download.push(FileInfo {
+                id: log_file["id"].as_str().unwrap_or("").to_string(),
+                name: log_file["name"].as_str().unwrap_or("").to_string(),
+                path: format!("logs/{}", log_file["name"].as_str().unwrap_or("")),
+            });
+        }
+    }
+
+    // Add report.json only if it exists
+    if let Some(report_file) = report_file {
+        files_to_download.push(FileInfo {
+            id: report_file["id"].as_str().unwrap_or("").to_string(),
+            name: report_file["name"].as_str().unwrap_or("").to_string(),
+            path: format!("results/{}", report_file["name"].as_str().unwrap_or("")),
+        });
+    }
     let patches_folder = files.iter().find(|file| {
         let file_name = file["name"].as_str().unwrap_or("").to_lowercase();
         file_name == "patches" &&
